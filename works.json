@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "hamstercombo",
+      "label": "Hamster combo",
+      "members": ["hamster-server", "hamster-clint", "hamsterquest"]
+    },
+    {
+      "id": "midnightcombo",
+      "label": "Midnight-Rider combo",
+      "members": ["mr-unity", "mr-vscode"]
+    },
+    {
+      "id": "omniroutecombo",
+      "label": "OmniRoute combo",
+      "members": ["omniroute-cli", "omniroute-web"]
+    },
+    {
+      "id": "gptcombo",
+      "label": "GPT combo",
+      "members": ["gpt-web", "gpt-mcp"]
+    }
+  ],
+  "works": [
+    {
+      "id": "hamster-server",
+      "label": "Hamster-Server start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Server start.bat",
+      "detect": true
+    },
+    {
+      "id": "hamster-clint",
+      "label": "Hamster-Clint start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Clint start.bat",
+      "detect": true
+    },
+    {
+      "id": "hamsterquest",
+      "label": "Hamsterquest start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamsterquest start.bat",
+      "detect": true
+    },
+    {
+      "id": "mr-unity",
+      "label": "Midnight-Rider Unity start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Midnight-Rider Unity start.bat",
+      "detect": true
+    },
+    {
+      "id": "mr-vscode",
+      "label": "Midnight-Rider VSCode start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Midnight-Rider VSCode start.bat",
+      "detect": true
+    },
+    {
+      "id": "omniroute-cli",
+      "label": "OmniRoute CLI start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute CLI start.bat",
+      "detect": true
+    },
+    {
+      "id": "omniroute-web",
+      "label": "OmniRoute Web start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute Web start.bat",
+      "detect": true
+    },
+    {
+      "id": "gpt-web",
+      "label": "GPT Web start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT Web MCP.bat",
+      "detect": true
+    },
+    {
+      "id": "gpt-mcp",
+      "label": "GPT MCP start",
+      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT MCP.bat",
+      "detect": true
+    }
+  ]
+}

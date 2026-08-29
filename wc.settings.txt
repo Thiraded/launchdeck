@@ -1,2 +1,0 @@
-﻿midnight rider start.bat
-omniroute start.bat
