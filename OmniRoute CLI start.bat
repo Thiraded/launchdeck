@@ -2,12 +2,14 @@
 title OmniRoute CLI
 echo.
 echo ====================================
-echo   OmniRoute - CLI (hidden output)
+echo   OmniRoute - CLI (visible)
 echo ====================================
 echo.
-echo CLI runs in background; log: %LOCALAPPDATA%\bg-launcher-logs\bg-omniroute-cli.log
+set "LOGDIR=%LOCALAPPDATA%\bg-launcher-logs"
+mkdir "%LOGDIR%" 2>nul
+set "OLOG=%LOGDIR%\bg-omniroute-cli.log"
+echo CLI output log: %OLOG%
 echo.
-powershell.exe -NoProfile -NonInteractive -Command "$logDir = Join-Path $env:LOCALAPPDATA 'bg-launcher-logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $oLog = Join-Path $logDir 'bg-omniroute-cli.log'; $inner = 'title bg-omniroute-cli && omniroute > \"' + $oLog + '\" 2>&1'; Start-Process cmd.exe -ArgumentList ('/d /s /c \"' + $inner + '\"') -WindowStyle Hidden"
-echo CLI started.
+start "OmniRoute CLI" cmd /k "omniroute > \"%OLOG%\" 2>&1"
+echo CLI launch requested.
 echo Window left open for inspection.
-pause

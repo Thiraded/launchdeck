@@ -1,11 +1,21 @@
 @echo off
 title wc-hamsterquest
-cd /d D:\projects\Hamsquest  || (
-  echo [wc-hamsterquest] D:\projects\Hamsquest NOT FOUND (drive missing?).
-  echo Window left open so work-combo can detect/kill it.
+set "APPDIR=D:\projects\Hamsquest"
+
+if not exist "%APPDIR%" (
+  echo [wc-hamsterquest] %APPDIR% NOT FOUND (drive missing?).
+  echo Window left open for inspection.
   pause
-  goto :eof
+  exit /b 1
 )
-npm run dev
-echo [wc-hamsterquest] dev exited; window left open.
-pause
+
+if not exist "%APPDIR%\package.json" (
+  echo [wc-hamsterquest] package.json not found in %APPDIR%
+  echo Window left open for inspection.
+  pause
+  exit /b 1
+)
+
+start "" cmd /k "cd /d \"%APPDIR%\" && call npm run dev"
+echo [wc-hamsterquest] dev launch requested.
+echo Open the new cmd window to watch the app boot.

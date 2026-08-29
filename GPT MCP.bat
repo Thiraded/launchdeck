@@ -6,8 +6,12 @@ echo   GPT MCP - Inspector (visible)
 echo ====================================
 echo.
 set "PROJECT=D:\Midnight-Rider"
+if not exist "%PROJECT%" (
+  echo [GPT MCP] %PROJECT% not found.
+  echo Window left open for inspection.
+  pause
+  exit /b 1
+)
 echo Running MCP Inspector for %PROJECT%...
-echo Window left open so work-combo can detect/kill it.
-cmd /k "title bg-gptweb-inspector && npx -y @modelcontextprotocol/inspector npx -y @modelcontextprotocol/server-filesystem \"%PROJECT%\""
-echo Inspector closed.
-pause
+start "GPT MCP Inspector" cmd /k "cd /d %PROJECT% && npx -y @modelcontextprotocol/inspector npx -y @modelcontextprotocol/server-filesystem %PROJECT%"
+echo Inspector launch requested.
