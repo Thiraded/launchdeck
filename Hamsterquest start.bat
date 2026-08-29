@@ -1,7 +1,7 @@
 @echo off
 title wc-hamsterquest
-cd /d D:\Hamsquest  || (
-  echo [wc-hamsterquest] D:\Hamsquest NOT FOUND (drive missing?).
+cd /d D:\projects\Hamsquest  || (
+  echo [wc-hamsterquest] D:\projects\Hamsquest NOT FOUND (drive missing?).
   echo Window left open so work-combo can detect/kill it.
   pause
   goto :eof

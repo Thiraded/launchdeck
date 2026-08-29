@@ -1,7 +1,7 @@
 @echo off
 title wc-hamster-clint
-cd /d D:\HamsterWorld\backoffice  || (
-  echo [wc-hamster-clint] D:\HamsterWorld\backoffice NOT FOUND (drive missing?).
+cd /d D:\projects\HamsterWorld\backoffice  || (
+  echo [wc-hamster-clint] D:\projects\HamsterWorld\backoffice NOT FOUND (drive missing?).
   echo Window left open so work-combo can detect/kill it.
   pause
   goto :eof

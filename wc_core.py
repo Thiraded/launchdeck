@@ -25,6 +25,11 @@ if not DESKTOP.exists():
 MANIFEST = DESKTOP / "works.json"
 REGISTRY = DESKTOP / "registry.json"
 
+# The manifest most recently used to build the model. member_nodes() reads
+# works from HERE (not from disk) so group membership is consistent with the
+# tree wc/kc actually render. Set by build_model().
+_CURRENT_MANIFEST = None
+
 # State tokens (selection column)
 OFF = " "   # [ ] not selected
 ON = "x"    # [x] selected to run
@@ -194,7 +199,19 @@ def unregister(work: dict) -> None:
     _save_registry(data)
 
 
-def registry_running() -> list[dict]:
+def live_running(manifest: dict | None = None) -> list[dict]:
+    """Return all works currently detected as running LIVE (not just what wc
+    registered). Used by kc to list + kill works you started by any means."""
+    if manifest is None:
+        manifest = load_manifest()
+    out = []
+    for w in manifest.get("works", []):
+        if w.get("detect") is False:
+            continue
+        if is_running(w):
+            out.append({"id": w["id"], "label": w.get("label", w["id"]),
+                        "bat": w.get("bat", "")})
+    return out
     """Return registry entries whose work is actually still running."""
     data = _load_registry()
     out = []
@@ -221,6 +238,8 @@ class Node:
 
 
 def build_model(manifest: dict) -> list[Node]:
+    global _CURRENT_MANIFEST
+    _CURRENT_MANIFEST = manifest
     nodes = []
     members_of_groups = set()
     for g in manifest.get("groups", []):
@@ -238,7 +257,7 @@ def build_model(manifest: dict) -> list[Node]:
 def member_nodes(model: list[Node], group: Node) -> list[Node]:
     by_id = {n.key: n for n in model}
     out = []
-    manifest = load_manifest()
+    manifest = _CURRENT_MANIFEST if _CURRENT_MANIFEST is not None else load_manifest()
     work_by_id = {w["id"]: w for w in manifest.get("works", [])}
     for mid in group.group_members:
         if mid in by_id:
@@ -319,3 +338,157 @@ def recompute_states(model: list[Node], states: dict) -> None:
                 states[n.key] = ON
             else:
                 states[n.key] = OFF
+
+
+# -------------------------------------------------------------------------
+# launch + progress  (used by wc's "run then monitor" flow)
+# -------------------------------------------------------------------------
+# A "work" is the BACKGROUND process its .bat spawns — NOT the launcher window.
+# E.g. OmniRoute CLI's .bat does `Start-Process ... 'title bg-omniroute-cli &&
+# omniroute'` (hidden); Hamster does `npm run dev` (node); Unity -> Unity
+# Hub.exe; VSCode -> Code.exe. The launcher window itself is just an inspector
+# that `pause`s and can be closed harmlessly.
+#
+# So wc's "progress" works by:
+#   * RUN: spawn the .bat (which in turn spawns the real bg process).
+#   * is_running(work) = does the real bg process exist? (match token, or the
+#     executable basename) — same live detection kc uses to list/kill.
+#   * done/ready/failed: read from the bg process's OWN log if `log` is set;
+#     otherwise a long-lived bg process with no error == stable.
+# We do NOT wrap the .bat in a tracker window (that would be an extra, useless
+# window). We simply watch the real process.
+import re
+
+LAUNCH_DIR = DESKTOP / "wc_logs"
+# A server that never exits is considered "stable" once it has been alive
+# this long with no error. Launchers that exit on their own settle via the
+# is_running() check turning False.
+GRACE_SECONDS = 12
+# HARD SAFETY CAP: if a launcher stays alive this long with no `ready` string
+# and no error, we declare it `stable` and STOP polling it. This prevents wc
+# from ever looping forever. (No work should need longer than this to show it
+# is alive-and-well.)
+STABLE_MAX_SECONDS = 60
+# Global ceiling on how many times wc will spawn `start ""` in one run.
+MAX_LAUNCHES = 16
+
+_launched_count = 0
+
+ERROR_KEYWORDS = (
+    "traceback", "fatal error", "error:", "exception in",
+    "cannot be found", "access is denied", "connection refused",
+    "command not found",
+)
+
+
+def _ensure_launch_dir() -> Path:
+    try:
+        LAUNCH_DIR.mkdir(exist_ok=True)
+    except Exception:
+        pass
+    return LAUNCH_DIR
+
+
+def _already_running(work: dict) -> bool:
+    """True if the work's REAL background process is already alive — so wc
+    doesn't spawn a 2nd one."""
+    return is_running(work)
+
+
+def launch_work(work: dict) -> dict | None:
+    """Spawn `work`'s .bat (which launches the real background process). Returns
+    a monitor record, or None if the .bat is missing.
+
+    SAFETY: never spawns more than MAX_LAUNCHES windows total; never spawns a
+    second one if the work is already running. The launcher window opens then
+    immediately `pause`s (harmless) — the REAL process is what we detect/kill.
+    """
+    global _launched_count
+    wid = work.get("id", "")
+    if not wid:
+        return None
+    if _launched_count >= MAX_LAUNCHES:
+        return None
+    if _already_running(work):
+        return {"id": wid, "label": work.get("label", wid), "work": work,
+                "launched": time.time(), "already": True}
+    realbat = work.get("bat")
+    if not realbat or not os.path.exists(realbat):
+        return None
+    run_work(work)   # spawns the .bat in its own visible window (per wc_core)
+    _launched_count += 1
+    return {"id": wid, "label": work.get("label", wid), "work": work,
+            "launched": time.time(), "already": False}
+
+
+def _read_log(work: dict) -> str:
+    log = work.get("log")
+    if not log:
+        return ""
+    p = Path(log) if isinstance(log, (str, Path)) else None
+    if not p or not p.exists():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _scan_error(text: str) -> str:
+    low = text.lower()
+    for kw in ERROR_KEYWORDS:
+        if kw in low:
+            return kw
+    return ""
+
+
+# Status values returned by poll_launch:
+#   starting | running | ready | stable | done | failed
+SETTLED = ("ready", "stable", "done")
+
+
+def poll_launch(rec: dict, work: dict | None = None) -> tuple[str, str]:
+    """Return (status, detail) for a launched work, watching its REAL bg proc.
+
+    SAFETY: a work still alive but with no `ready` marker and no error past
+    STABLE_MAX_SECONDS is declared `stable` — so wc's monitor loop always ends.
+    """
+    work = work or rec.get("work") or {}
+    if rec.get("already"):
+        return ("stable", "already running")
+    alive = is_running(work)
+    if not alive:
+        # real process gone -> either it exited (done) or died (failed)
+        logtxt = _read_log(work)
+        err = _scan_error(logtxt)
+        if err:
+            return ("failed", err)
+        return ("done", "")
+    # alive: look for ready marker / error in its log
+    logtxt = _read_log(work)
+    ready = work.get("ready")
+    if ready and str(ready).lower() in logtxt.lower():
+        return ("ready", "")
+    err = _scan_error(logtxt)
+    if err:
+        return ("failed", err)
+    age = time.time() - rec.get("launched", 0)
+    if age >= STABLE_MAX_SECONDS:
+        return ("stable", "")
+    if age >= GRACE_SECONDS:
+        return ("stable", "")
+    return ("running", "")
+
+
+def _scan_error(text: str) -> str:
+    low = text.lower()
+    for kw in ERROR_KEYWORDS:
+        if kw in low:
+            return kw
+    return ""
+
+
+# Status values returned by poll_launch:
+#   starting | running | ready | stable | done | failed
+SETTLED = ("ready", "stable", "done")
+

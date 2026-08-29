@@ -27,54 +27,64 @@
       "id": "hamster-server",
       "label": "Hamster-Server start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Server start.bat",
+      "match": "wc-hamster-server",
       "detect": true
     },
     {
       "id": "hamster-clint",
       "label": "Hamster-Clint start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Clint start.bat",
+      "match": "wc-hamster-clint",
       "detect": true
     },
     {
       "id": "hamsterquest",
       "label": "Hamsterquest start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamsterquest start.bat",
+      "match": "wc-hamsterquest",
       "detect": true
     },
     {
       "id": "mr-unity",
       "label": "Midnight-Rider Unity start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Midnight-Rider Unity start.bat",
+      "match": ["title Midnight-Rider Unity", "Unity Hub.exe"],
       "detect": true
     },
     {
       "id": "mr-vscode",
       "label": "Midnight-Rider VSCode start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Midnight-Rider VSCode start.bat",
+      "match": ["title Midnight-Rider VSCode", "Code.exe"],
       "detect": true
     },
     {
       "id": "omniroute-cli",
       "label": "OmniRoute CLI start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute CLI start.bat",
+      "match": "title bg-omniroute-cli",
+      "log": "%LOCALAPPDATA%\\bg-launcher-logs\\bg-omniroute-cli.log",
       "detect": true
     },
     {
       "id": "omniroute-web",
       "label": "OmniRoute Web start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute Web start.bat",
+      "match": "OmniRoute AI Gateway.lnk",
       "detect": true
     },
     {
       "id": "gpt-web",
       "label": "GPT Web start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT Web MCP.bat",
+      "match": "title bg-gptweb-tunnel",
       "detect": true
     },
     {
       "id": "gpt-mcp",
       "label": "GPT MCP start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT MCP.bat",
+      "match": "title bg-gptweb-inspector",
       "detect": true
     }
   ]
