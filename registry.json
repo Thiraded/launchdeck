@@ -1,27 +1,7 @@
 {
-  "omniroute-web": {
-    "label": "OmniRoute Web start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute Web start.bat",
-    "launched": "2026-08-29 12:49:41"
-  },
-  "hamster-server": {
-    "label": "Hamster-Server start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Server start.bat",
-    "launched": "2026-08-29 21:11:02"
-  },
-  "hamster-clint": {
-    "label": "Hamster-Clint start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Clint start.bat",
-    "launched": "2026-08-29 21:11:02"
-  },
-  "hamsterquest": {
-    "label": "Hamsterquest start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamsterquest start.bat",
-    "launched": "2026-08-29 13:44:31"
-  },
-  "mr-vscode": {
-    "label": "Midnight-Rider VSCode start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Midnight-Rider VSCode start.bat",
-    "launched": "2026-08-29 21:50:00"
+  "gpt-mcp": {
+    "label": "GPT MCP start",
+    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT MCP.bat",
+    "launched": "2026-08-30 00:36:05"
   }
 }

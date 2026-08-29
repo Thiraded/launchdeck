@@ -1,26 +1,29 @@
-"""work.py — Work Combo (wc) TUI: SELECT works, then RUN them.
+"""wc.py — Work Combo (wc) TUI: the ONE tool to manage your works.
 
-    [ ] Hamster combo
-       [ ] Hamster-Server start
-       [ ] Hamster-Clint start
-       [ ] Hamsterquest start
-    ...
+It is BOTH a launcher and a killer (kc was merged in here):
 
-wc is a PURE LAUNCHER now. No running/kill logic lives here (that's kc's
-job). On Enter it spawns every selected work in its OWN visible window, shows
-per-terminal progress (running -> building -> ready/stable/done), and then
-CLOSES ITSELF once everything has settled. If any work reports an error, wc
-stays open and shows it until you quit (Esc/q).
+    [ ] Hamster-Server start
+    [X] OmniRoute CLI start          <- selected (Space), will be acted on
+       [-]                            <- actually running right now (info)
 
-Rules:
-  * A group has no state of its own: it shows [x] iff any child is [x] (OR).
-    Space on a group toggles ALL its children; clearing any child clears it.
-  * Selection is remembered in wc.settings.txt (loaded on start / saved on quit).
+Keys:
+  Up/Down  : move cursor
+  Space    : toggle select [ ] <-> [X]   (mark what you want to act on)
+  Enter    : ACT on every [X] node --
+               * if it is running  [-]  -> KILL it
+               * if not running        -> LAUNCH it (open its window)
+  t        : leave-alone (skip on Enter)   [reserved]
+  Esc / q  : quit
 
-Keys: Up/Down move | Space/t select | Enter run | Esc/q quit
+The [-] marker is LIVE (refreshed by a background thread, never blocks keys).
+It is info only -- you cannot "cancel" it by keypress; to stop a running work
+you select it [X] and press Enter (which kills it).
+
+Selection is remembered in wc.settings.txt (loaded on start / saved on quit).
 """
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -28,7 +31,6 @@ import wc_core as core
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
-CYAN = "\033[36m"
 GREEN = "\033[32m"
 MAGENTA = "\033[35m"
 RED = "\033[31m"
@@ -36,21 +38,47 @@ YELLOW = "\033[33m"
 DIM = "\033[2m"
 WHITE_ON_BLUE = "\033[44m\033[37m"
 
-# status -> (label, color)
-STATUS_UI = {
-    "starting": ("starting...", YELLOW),
-    "running":  ("running / building", YELLOW),
-    "ready":    ("ready", GREEN),
-    "stable":   ("running (stable)", GREEN),
-    "done":     ("done", GREEN),
-    "failed":   ("FAILED", RED),
-}
+# Live running snapshots (id set) so the screen can show [-] markers without
+# blocking the key loop. A background thread refreshes it every 2s.
+_running_cache = set()
+_running_lock = threading.Lock()
 
 
-def state_box(s: str) -> str:
-    if s == core.ON:
-        return f"{GREEN}[x]{RESET}"
-    return f"{DIM}[ ]{RESET}"
+def _refresh_running_loop(manifest):
+    global _running_cache
+    while True:
+        try:
+            commandlines = core.scan_commandlines()
+            s = {
+                w["id"] for w in manifest.get("works", [])
+                if w.get("detect") is not False
+                and core.is_running(w, commandlines)
+            }
+        except Exception:
+            s = set()
+        with _running_lock:
+            _running_cache = s
+        time.sleep(2.0)
+
+
+def start_running_monitor(manifest):
+    t = threading.Thread(target=_refresh_running_loop, args=(manifest,), daemon=True)
+    t.start()
+
+
+def is_node_running(n) -> bool:
+    if not n.work:
+        return False
+    with _running_lock:
+        return n.key in _running_cache
+
+
+def state_box(s: str, running: bool = False) -> str:
+    # [X] = selected to act on (Space toggles); [-] = running (info only).
+    box = f"{GREEN}[X]{RESET}" if s == core.ON else f"{DIM}[ ]{RESET}"
+    if running:
+        box += f" {MAGENTA}[-]{RESET}"
+    return box
 
 
 def clear():
@@ -71,15 +99,15 @@ def flatten(model):
 
 def render(model, states, cursor, status):
     clear()
-    print(f"{BOLD}  WORK COMBO  -  select & launch works{RESET}")
-    print(f"{DIM}  Up/Down: move   Space/t: select   Enter: run   Esc/q: quit{RESET}")
+    print(f"{BOLD}  WORK COMBO  -  manage works (launch / kill){RESET}")
+    print(f"{DIM}  [X]=select(Space)  [-]=running(info)  Enter: kill[-]/launch  Esc/q: quit{RESET}")
     if status:
-        print(f"  {MAGENTA}{status}{RESET}")
+        print(f"  {YELLOW}{status}{RESET}")
     print()
 
     rows = flatten(model)
     for i, (n, indent) in enumerate(rows):
-        box = state_box(states.get(n.key, core.OFF))
+        box = state_box(states.get(n.key, core.OFF), is_node_running(n))
         line = f"  {indent}{box} {n.label}"
         if i == cursor:
             line = f"{WHITE_ON_BLUE}» {indent}{box} {n.label}{RESET}"
@@ -87,37 +115,6 @@ def render(model, states, cursor, status):
 
     print()
     print(f"{DIM}  cursor: {cursor + 1}/{len(rows)}{RESET}")
-
-
-def render_progress(recs, manifest):
-    clear()
-    print(f"{BOLD}  WORK COMBO  -  launching...{RESET}")
-    print(f"{DIM}  (wc closes itself when all works settle; Esc/q to abort & stay){RESET}")
-    print()
-    work_by_id = {w["id"]: w for w in manifest.get("works", [])}
-    any_failed = False
-    all_settled = True
-    for rec in recs:
-        if rec.get("_missing"):
-            st, detail = "failed", "bat not found"
-        else:
-            st, detail = core.poll_launch(rec, work_by_id.get(rec["id"]))
-        label, color = STATUS_UI.get(st, (st, DIM))
-        if st == "failed":
-            any_failed = True
-        if st not in core.SETTLED:
-            all_settled = False
-        tail = f"  {DIM}{detail}{RESET}" if detail else ""
-        print(f"  {color}{label}{RESET}  {rec['label']}{tail}")
-    print()
-    if any_failed:
-        print(f"{RED}  Some works reported an error — wc stays open.{RESET}")
-        print(f"{DIM}  check each work's own log (works.json -> 'log'){RESET}")
-    elif all_settled:
-        print(f"{GREEN}  All works settled. Closing wc...{RESET}")
-    else:
-        print(f"{DIM}  waiting for works to settle...{RESET}")
-    return any_failed, all_settled
 
 
 def load_states_from_preset(model):
@@ -149,29 +146,60 @@ def save_preset(model, states):
     p.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
-def get_key() -> str:
+def _disable_quickedit():
+    """Turn OFF console QuickEdit mode. When QuickEdit is ON, a mouse click
+    inside the console window PAUSES keyboard input (the window waits for a
+    select/copy) -- which looks exactly like 'keys do nothing'. Disabling it
+    keeps the window always accepting keys."""
     try:
         import msvcrt
-        raw = msvcrt.getwch()
-        ch = raw.decode("latin-1") if isinstance(raw, bytes) else raw
+        kernel32 = __import__("ctypes").windll.kernel32
+        h = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        ENABLE_PROCESSED_INPUT = 0x0001
+        ENABLE_LINE_INPUT = 0x0002
+        ENABLE_ECHO_INPUT = 0x0004
+        ENABLE_MOUSE_INPUT = 0x0010
+        ENABLE_QUICK_EDIT = 0x0040
+        # Keep processed/line/echo; drop mouse + quickedit so clicks don't
+        # hijack the keyboard.
+        new_mode = (ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
+        kernel32.SetConsoleMode(h, new_mode)
     except Exception:
-        ch = sys.stdin.read(1)
-    return ch
+        pass
+
+
+def get_key() -> str:
+    """Read one key robustly. Returns a normalized string:
+    ' ' (space), '\\r' (Enter), '\\x1b' (Esc), 'UP'/'DOWN' (arrows), or the raw
+    char. Uses msvcrt.getch() (raw bytes); falls back to stdin if there is no
+    real console (e.g. piped test runs)."""
+    try:
+        import msvcrt
+        raw = msvcrt.getch()
+    except Exception:
+        return sys.stdin.read(1)
+    if isinstance(raw, bytes):
+        b = raw
+    else:
+        return raw
+    if b in (b"\x00", b"\xe0"):  # arrow prefix
+        try:
+            raw2 = msvcrt.getch()
+            b2 = raw2 if isinstance(raw2, bytes) else raw2.encode("latin-1")
+        except Exception:
+            b2 = b""
+        if b2 == b"H":
+            return "UP"
+        if b2 == b"P":
+            return "DOWN"
+        return ""
+    try:
+        return b.decode("latin-1")
+    except Exception:
+        return ""
 
 
 def read_arrow(ch: str):
-    """If ch is an arrow prefix, read the follow-up code. Returns 'UP'/'DOWN'/None."""
-    if ch in ("\x00", "\xe0"):
-        try:
-            import msvcrt
-            raw2 = msvcrt.getwch()
-            code = raw2.decode("latin-1") if isinstance(raw2, bytes) else raw2
-        except Exception:
-            code = ""
-        if code == "H":
-            return "UP"
-        if code == "P":
-            return "DOWN"
     return None
 
 
@@ -186,7 +214,6 @@ def selected_works(model, states) -> list:
         else:
             if states.get(n.key) == core.ON:
                 out.append(n)
-    # dedupe (a work could be ON and also under a selected group)
     seen, uniq = set(), []
     for node in out:
         if node.key not in seen:
@@ -195,7 +222,35 @@ def selected_works(model, states) -> list:
     return uniq
 
 
+def act_on_selected(model, states):
+    """Enter handler: for every [X] node, KILL if running else LAUNCH.
+    Returns a human-readable status string."""
+    sel = selected_works(model, states)
+    if not sel:
+        return "Nothing selected -- Space to select, then Enter"
+    # One fresh scan so kill/launch decisions are accurate (no 2s cache lag).
+    commandlines = core.scan_commandlines()
+    killed, launched = [], []
+    for node in sel:
+        if not node.work:
+            continue
+        w = node.work
+        if core.is_running(w, commandlines):
+            core.kill_work(w)
+            killed.append(w.get("label", w["id"]))
+        else:
+            core.launch_work(w, commandlines)
+            launched.append(w.get("label", w["id"]))
+    parts = []
+    if killed:
+        parts.append(f"Killed: {', '.join(killed)}")
+    if launched:
+        parts.append(f"Launched: {', '.join(launched)}")
+    return " | ".join(parts) if parts else "Nothing to do"
+
+
 def main():
+    _disable_quickedit()  # so mouse clicks don't freeze keyboard input
     manifest = core.load_manifest()
     model = core.build_model(manifest)
     if not model:
@@ -204,7 +259,9 @@ def main():
         return
     states = load_states_from_preset(model)
 
-    # ---- SELECT phase -------------------------------------------------
+    # Live-running monitor in the background (does NOT block keys).
+    start_running_monitor(manifest)
+
     rows = flatten(model)
     cursor = 0
     status = ""
@@ -213,24 +270,23 @@ def main():
         status = ""
 
         ch = get_key()
-        if ch == "\x1b" or ch in ("q", "Q"):
+        if ch in ("\x1b", "q", "Q"):
             try:
                 save_preset(model, states)
             except Exception:
                 pass
             return
 
-        arrow = read_arrow(ch)
-        if arrow == "UP":
+        if ch == "UP":
             cursor = (cursor - 1) % len(rows)
             continue
-        if arrow == "DOWN":
+        if ch == "DOWN":
             cursor = (cursor + 1) % len(rows)
             continue
 
         node = rows[cursor][0]
 
-        if ch == " " or ch in ("t", "T"):  # Space OR 't' ("tap") toggle select
+        if ch == " " or ch in ("t", "T"):  # Space OR 't' toggles selection
             key = node.key
             if node.kind == "group":
                 members = core.member_nodes(model, node)
@@ -242,64 +298,10 @@ def main():
                 states[key] = core.next_on_space(states.get(key, core.OFF))
             continue
 
-        if ch == "\r" or ch == "\n":  # Enter -> run selected
-            sel = selected_works(model, states)
-            if not sel:
-                status = "Nothing selected — Space to select, then Enter"
-                continue
-            try:
-                save_preset(model, states)
-            except Exception:
-                pass
-            run_phase(sel, manifest)
-            # after run_phase returns, we're done launching; quit wc.
-            return
-
-
-def run_phase(sel, manifest):
-    """Spawn every selected work in its own window, show progress, then
-    auto-close wc. SAFETY: the monitor loop is bounded by a hard deadline
-    (STABLE_MAX_SECONDS + slack) so wc can never hang the machine. If a work
-    errored, we show it for up to FAILED_VIEW_SECONDS then close anyway."""
-    from wc_core import STABLE_MAX_SECONDS
-
-    recs = []
-    for node in sel:
-        if node.work:
-            rec = core.launch_work(node.work)
-            if rec:
-                recs.append(rec)
-            # missing .bat -> launch_work returned None; record as failed
-            else:
-                recs.append({
-                    "id": node.key, "label": node.label, "work": node.work,
-                    "launched": time.time(), "already": False, "_missing": True,
-                })
-    if not recs:
-        return
-
-    work_by_id = {w["id"]: w for w in manifest.get("works", [])}
-
-    # --- monitor loop: bounded hard stop (no infinity loops) ---
-    MONITOR_SECONDS = STABLE_MAX_SECONDS + 20   # total ceiling for monitoring
-    FAILED_VIEW_SECONDS = 20                    # show errors this long, then exit
-    start = time.time()
-    failed_since = None
-    while True:
-        any_failed, all_settled = render_progress(recs, manifest)
-        if any_failed and failed_since is None:
-            failed_since = time.time()
-        elapsed = time.time() - start
-        if all_settled:
-            time.sleep(0.6)          # brief "all settled" flash, then close
-            break
-        if failed_since is not None and (time.time() - failed_since) >= FAILED_VIEW_SECONDS:
-            break
-        if elapsed >= MONITOR_SECONDS:
-            break
-        time.sleep(1.0)
-    # wc returns -> main() exits -> the window closes. (On error we showed it
-    # for FAILED_VIEW_SECONDS; on timeout we close rather than hang forever.)
+        if ch == "\r" or ch == "\n":  # Enter -> kill running / launch not-running
+            status = act_on_selected(model, states)
+            time.sleep(0.4)
+            continue
 
 
 if __name__ == "__main__":

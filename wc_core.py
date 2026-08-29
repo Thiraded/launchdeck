@@ -36,12 +36,6 @@ ON = "x"    # [x] selected to run
 RUN = "-"   # [-] running (verified alive)
 LEFT_ALONE = "_"  # [.] left alone (don't touch on Enter/kill)
 
-HIDDEN_B64 = (
-    "UwB0AGEAcgB0AC0AUAByAG8AYwBlAHMAcwAgAGMAbQBkAC4AZQB4AGUAIAAtAEEAcgBnAHUAbQBlAG4AdABM"
-    "AGkAcwB0ACAAQAAoACcALwBkACcALAAnAC8AYwAnACwAKAAnACIAJwAgACsAIAAkAGUAbgB2ADoATABDAF8AUwBFAUwARg"
-    "AgACsAIAAnACIAIABfAF8AYgBnAF8AXwAnACkAKQAgAC0AVwBpAG4AZABvAHcAUwB0AHkAbABlACAASABpAGQAZABlAG4A"
-)
-
 
 # --------------------------------------------------------------------------
 # manifest
@@ -87,36 +81,48 @@ def kill_tokens_for(work: dict) -> list[str]:
     return toks
 
 
-def is_running(work: dict) -> bool:
-    """True if any live (non-powershell, non-self) process CommandLine contains
-    a match token. If `detect` is False we never track running state."""
-    if work.get("detect") is False:
-        return False
-    tokens = titles_for(work)
-    if not tokens:
-        return False
+def scan_commandlines() -> list[str]:
+    """Return the CommandLine of every live non-powershell, non-self process in
+    ONE scan. Call this once and reuse the list for many is_running checks
+    instead of spawning a powershell per work (that's what made kc lag)."""
     ps = (
         "$me = $PID;"
-        "$tokens = @('" + "','".join(tokens) + "');"
-        "$hit = $false;"
         "foreach ($p in (Get-CimInstance Win32_Process)) {"
         "  if ($p.ProcessId -eq $me) { continue }"
         "  if ($null -eq $p.CommandLine) { continue }"
         "  if ($p.Name -like 'powershell*') { continue }"
-        "  foreach ($t in $tokens) {"
-        "    if ($p.CommandLine -like \"*$($t)*\") { $hit = $true }"
-        "  }"
-        "};"
-        "if ($hit) { Write-Output 'RUNNING' }"
+        "  Write-Output $p.CommandLine"
+        "}"
     )
     try:
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
             capture_output=True, text=True, timeout=15,
         )
-        return "RUNNING" in (r.stdout or "")
+        return [ln for ln in (r.stdout or "").splitlines() if ln]
     except Exception:
+        return []
+
+
+def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
+    """True if any live (non-powershell, non-self) process CommandLine contains
+    a match token. If `detect` is False we never track running state. Pass a
+    pre-scanned `commandlines` list (from scan_commandlines) to avoid spawning
+    a powershell per call."""
+    if work.get("detect") is False:
         return False
+    tokens = titles_for(work)
+    if not tokens:
+        return False
+    if commandlines is None:
+        commandlines = scan_commandlines()
+    toks_low = [t.lower() for t in tokens]
+    for line in commandlines:
+        low = line.lower()
+        for t in toks_low:
+            if t and t in low:
+                return True
+    return False
 
 
 # --------------------------------------------------------------------------
@@ -199,26 +205,36 @@ def unregister(work: dict) -> None:
     _save_registry(data)
 
 
-def live_running(manifest: dict | None = None) -> list[dict]:
+def registry_running() -> list[dict]:
+    """Return registry entries whose work is still alive. This is the list kc
+    uses to display and kill currently-running works. Scans processes once."""
+    data = _load_registry()
+    out = []
+    manifest = load_manifest()
+    commandlines = scan_commandlines()
+    for wid, info in data.items():
+        w = work_by_id(manifest, wid)
+        if w and is_running(w, commandlines):
+            out.append({"id": wid, **info})
+    return out
+
+
+def live_running(manifest: dict | None = None, commandlines: list[str] | None = None) -> list[dict]:
     """Return all works currently detected as running LIVE (not just what wc
-    registered). Used by kc to list + kill works you started by any means."""
+    registered). Used by kc to list + kill works you started by any means.
+    Pass a pre-scanned `commandlines` (from scan_commandlines) to do the whole
+    scan in a single powershell call instead of one per work."""
     if manifest is None:
         manifest = load_manifest()
+    if commandlines is None:
+        commandlines = scan_commandlines()
     out = []
     for w in manifest.get("works", []):
         if w.get("detect") is False:
             continue
-        if is_running(w):
+        if is_running(w, commandlines):
             out.append({"id": w["id"], "label": w.get("label", w["id"]),
                         "bat": w.get("bat", "")})
-    return out
-    """Return registry entries whose work is actually still running."""
-    data = _load_registry()
-    out = []
-    for wid, info in data.items():
-        w = work_by_id(load_manifest(), wid)
-        if w and is_running(w):
-            out.append({"id": wid, **info})
     return out
 
 
@@ -395,13 +411,14 @@ def _already_running(work: dict) -> bool:
     return is_running(work)
 
 
-def launch_work(work: dict) -> dict | None:
+def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | None:
     """Spawn `work`'s .bat (which launches the real background process). Returns
-    a monitor record, or None if the .bat is missing.
+    a monitor record, or None if the .bat is missing. Caller (wc) decides
+    whether to kill a running instance first -- this just launches.
 
-    SAFETY: never spawns more than MAX_LAUNCHES windows total; never spawns a
-    second one if the work is already running. The launcher window opens then
-    immediately `pause`s (harmless) — the REAL process is what we detect/kill.
+    SAFETY: never spawns more than MAX_LAUNCHES windows total. The launcher
+    window opens then immediately `pause`s (harmless) -- the REAL process is
+    what we detect/kill.
     """
     global _launched_count
     wid = work.get("id", "")
@@ -409,9 +426,6 @@ def launch_work(work: dict) -> dict | None:
         return None
     if _launched_count >= MAX_LAUNCHES:
         return None
-    if _already_running(work):
-        return {"id": wid, "label": work.get("label", wid), "work": work,
-                "launched": time.time(), "already": True}
     realbat = work.get("bat")
     if not realbat or not os.path.exists(realbat):
         return None
@@ -447,16 +461,17 @@ def _scan_error(text: str) -> str:
 SETTLED = ("ready", "stable", "done")
 
 
-def poll_launch(rec: dict, work: dict | None = None) -> tuple[str, str]:
+def poll_launch(rec: dict, work: dict | None = None, commandlines: list[str] | None = None) -> tuple[str, str]:
     """Return (status, detail) for a launched work, watching its REAL bg proc.
 
     SAFETY: a work still alive but with no `ready` marker and no error past
     STABLE_MAX_SECONDS is declared `stable` — so wc's monitor loop always ends.
-    """
+    Pass a pre-scanned `commandlines` (from scan_commandlines) to avoid one
+    powershell spawn per poll per work."""
     work = work or rec.get("work") or {}
     if rec.get("already"):
         return ("stable", "already running")
-    alive = is_running(work)
+    alive = is_running(work, commandlines)
     if not alive:
         # real process gone -> either it exited (done) or died (failed)
         logtxt = _read_log(work)
@@ -479,16 +494,4 @@ def poll_launch(rec: dict, work: dict | None = None) -> tuple[str, str]:
         return ("stable", "")
     return ("running", "")
 
-
-def _scan_error(text: str) -> str:
-    low = text.lower()
-    for kw in ERROR_KEYWORDS:
-        if kw in low:
-            return kw
-    return ""
-
-
-# Status values returned by poll_launch:
-#   starting | running | ready | stable | done | failed
-SETTLED = ("ready", "stable", "done")
 
