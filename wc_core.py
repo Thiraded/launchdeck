@@ -288,11 +288,14 @@ def member_nodes(model: list[Node], group: Node) -> list[Node]:
 # state machine  (selection only; running is detected live)
 # --------------------------------------------------------------------------
 def next_on_space(state: str) -> str:
-    """Space toggles OFF<->ON; never touches RUN/LEFT_ALONE."""
-    if state == OFF:
-        return ON
+    """Space toggles selection: OFF<->ON. A running work (RUN) is treated as
+    'not yet selected' for kill purposes, so Space on a RUN node selects it
+    (ON) -- i.e. 'mark this running work to be killed'. LEFT_ALONE is left
+    untouched by Space."""
     if state == ON:
         return OFF
+    if state == OFF or state == RUN:
+        return ON
     return state
 
 
@@ -336,13 +339,14 @@ def enter_action(state: str, node: Node, model: list[Node], states: dict | None 
 def recompute_states(model: list[Node], states: dict) -> None:
     """Recompute RUN (detected) + group selection (OR of children).
     Selection of a child is preserved; groups are always derived."""
-    # 1) mark running children
+    # 1) mark running children (but never override an explicit ON selection --
+    #    if the user selected a running work to kill, keep it ON so Space sticks)
     for n in model:
         if n.kind != "group":
             continue
         members = member_nodes(model, n)
         for m in members:
-            if m.is_running() and states.get(m.key) != LEFT_ALONE:
+            if m.is_running() and states.get(m.key) == OFF:
                 states[m.key] = RUN
             elif states.get(m.key) == RUN and not m.is_running():
                 states[m.key] = OFF

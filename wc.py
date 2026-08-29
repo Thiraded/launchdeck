@@ -258,22 +258,30 @@ def selected_works(model, states) -> list:
 
 def act_on_selected(model, states):
     """Enter handler: for every [X] node, KILL if running else LAUNCH.
-    Returns a human-readable status string."""
+    Returns a human-readable status string.
+
+    Decision rule: trust the live [-] cache (what the user SEES) first. If the
+    background monitor flagged this node as running, KILL it. Only if the cache
+    says not-running do we do a fresh scan -- and even then, if the fresh scan
+    disagrees we believe the cache, because a failed/empty scan must never turn
+    a 'kill' into an accidental 'launch'."""
     sel = selected_works(model, states)
     if not sel:
         return "Nothing selected -- Space to select, then Enter"
-    # One fresh scan so kill/launch decisions are accurate (no 2s cache lag).
-    commandlines = core.scan_commandlines()
+    # Snapshot the live-running set the user is looking at.
+    with _running_lock:
+        running_set = set(_running_cache)
     killed, launched = [], []
     for node in sel:
         if not node.work:
             continue
         w = node.work
-        if core.is_running(w, commandlines):
+        is_run = node.key in running_set or core.is_running(w)
+        if is_run:
             core.kill_work(w)
             killed.append(w.get("label", w["id"]))
         else:
-            core.launch_work(w, commandlines)
+            core.launch_work(w)
             launched.append(w.get("label", w["id"]))
     parts = []
     if killed:
@@ -332,7 +340,7 @@ def main():
                 states[key] = core.next_on_space(states.get(key, core.OFF))
             continue
 
-        if ch == "\r" or ch == "\n":  # Enter -> kill running / launch not-running
+        if ch in ("\r", "\n", "\x0d", "\x0a"):  # Enter (any form) -> kill running / launch not-running
             status = act_on_selected(model, states)
             time.sleep(0.4)
             continue
