@@ -169,38 +169,72 @@ def _disable_quickedit():
 
 
 def get_key() -> str:
-    """Read one key robustly. Returns a normalized string:
-    ' ' (space), '\\r' (Enter), '\\x1b' (Esc), 'UP'/'DOWN' (arrows), or the raw
-    char. Uses msvcrt.getch() (raw bytes); falls back to stdin if there is no
-    real console (e.g. piped test runs)."""
+    """Read one key via ReadConsoleInput (ctypes). This reads the real console
+    INPUT buffer directly -- it is NOT affected by QuickEdit mode and works even
+    when msvcrt.getch()/getwch() misbehave (e.g. bat-spawned windows). Returns a
+    normalized token: ' ' (space), '\\r' (Enter), '\\x1b' (Esc), 'UP'/'DOWN', or
+    the raw char. Falls back to stdin if no real console is attached."""
     try:
-        import msvcrt
-        raw = msvcrt.getch()
+        import ctypes
+        from ctypes import wintypes, Structure, c_ulong, c_ushort, c_short, c_wchar, c_int
+        kernel32 = ctypes.windll.kernel32
+
+        class KEY_EVENT_RECORD(Structure):
+            _fields_ = [
+                ("bKeyDown", c_int),
+                ("wRepeatCount", c_ushort),
+                ("wVirtualKeyCode", c_ushort),
+                ("wVirtualScanCode", c_ushort),
+                ("uChar", c_wchar),
+                ("dwControlKeyState", c_ulong),
+            ]
+
+        class INPUT_RECORD(Structure):
+            _fields_ = [("EventType", c_ushort), ("KeyEvent", KEY_EVENT_RECORD)]
+
+        VK_CODE = {0x20: " ", 0x0D: "\r", 0x1B: "\x1b",
+                   0x26: "UP", 0x28: "DOWN", 0x51: "q", 0x54: "t"}
+        hIn = kernel32.GetStdHandle(-10)
+        rec = INPUT_RECORD()
+        nread = c_ulong(0)
+        while True:
+            got = kernel32.ReadConsoleInputW(hIn, ctypes.byref(rec), 1, ctypes.byref(nread))
+            if got and nread.value == 1:
+                if rec.EventType == 1 and rec.KeyEvent.bKeyDown:  # KEY_EVENT down
+                    vk = rec.KeyEvent.wVirtualKeyCode
+                    ch = rec.KeyEvent.uChar
+                    if vk in VK_CODE:
+                        return VK_CODE[vk]
+                    if ch and ch != "\x00":
+                        return ch
+                # key-up or other event -> keep draining the buffer
+                continue
+            # No event ready: brief yield so we don't busy-spin. We do NOT fall
+            # back to stdin here (stdin blocks forever in a real console app).
+            time.sleep(0.02)
     except Exception:
-        return sys.stdin.read(1)
-    if isinstance(raw, bytes):
-        b = raw
-    else:
-        return raw
-    if b in (b"\x00", b"\xe0"):  # arrow prefix
+        # last-resort fallback
         try:
-            raw2 = msvcrt.getch()
-            b2 = raw2 if isinstance(raw2, bytes) else raw2.encode("latin-1")
+            import msvcrt
+            raw = msvcrt.getch()
+            b = raw if isinstance(raw, bytes) else raw.encode("latin-1")
+            if b in (b"\x00", b"\xe0"):
+                try:
+                    b2 = msvcrt.getch()
+                    b2 = b2 if isinstance(b2, bytes) else b2.encode("latin-1")
+                except Exception:
+                    b2 = b""
+                if b2 == b"H":
+                    return "UP"
+                if b2 == b"P":
+                    return "DOWN"
+                return ""
+            return b.decode("latin-1")
         except Exception:
-            b2 = b""
-        if b2 == b"H":
-            return "UP"
-        if b2 == b"P":
-            return "DOWN"
-        return ""
-    try:
-        return b.decode("latin-1")
-    except Exception:
-        return ""
-
-
-def read_arrow(ch: str):
-    return None
+            try:
+                return sys.stdin.read(1)
+            except Exception:
+                return ""
 
 
 def selected_works(model, states) -> list:
