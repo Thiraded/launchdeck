@@ -10,11 +10,16 @@
 
 A single-screen launcher that starts/stops the user's development servers and
 apps. Each "work" is a Windows `.bat` that opens its OWN visible console
-window. Two TUIs orchestrate them:
+window.
 
-- **wc** (work combo) — SELECT works and RUN them.
-- **tc** (task combo) — *[target state]* list currently-RUNNING works and KILL them.
-  (Today this role is filled by `kc.py`; the rework renames/repurposes it to `tc`.)
+**Current shape (post-rework): ONE TUI does both jobs:**
+
+- **wc** (work combo) — the ONLY tool. SELECT works (Space → `[X]`) and
+  `Enter` either **KILLS** a running work (`[-]`) or **LAUNCHES** a not-running
+  one. Lists live running state with a `[-]` marker.
+
+`kc` (the old separate kill tool) is **being deleted** — its role is merged
+into `wc`. See §4.3.
 
 The user's standing demands (architectural constraints — do not regress):
 - **Inline-tree UI**, one column with `SPACE` indentation for group members.
@@ -37,15 +42,13 @@ The user's standing demands (architectural constraints — do not regress):
 | File | Role |
 |------|------|
 | `works.json` | Manifest: `groups[]` (id/label/members) + `works[]` (id/label/bat/match/detect). |
-| `wc_core.py` | Pure logic shared by both TUIs: manifest load, detection, run/kill, registry, model, state machine. NO UI. |
-| `wc.py` | Work-combo TUI (SELECT + RUN). **Being slimmed down in this task.** |
-| `kc.py` | Kill-combo TUI (list running + kill). **Being replaced by `tc.py` in this task.** |
-| `tc.py` | *[new]* Task-combo TUI (list running + kill). Target replacement for `kc.py`. |
+| `wc_core.py` | Pure logic shared by the TUI: manifest load, detection, run/kill, registry, model, state machine. NO UI. |
+| `wc.py` | The ONE TUI: SELECT (Space → `[X]`) + `Enter` KILLS running `[-]` / LAUNCHES not-running. Live `[-]` via background thread. |
 | `test_wc_core.py` | Headless integration test (fake workers, live detection, kill, state machine). |
-| `wc.bat` / `wc.lnk` | Launcher for `wc.py` (hermes venv python, then `pause`). |
-| `tc.bat` | *[new]* Launcher for `tc.py` — must open a real window, NOT background. |
-| `registry.json` | Runtime: written by wc when a work launches; read by tc/kc to list running. |
+| `wc.bat` / `wc.lnk` | Launcher for `wc.py` (hermes venv python). Opens a real visible window. |
+| `registry.json` | Runtime: written by wc when a work launches; read to list running. |
 | `wc.settings.txt` | Selection preset (lowercased work ids), loaded on start / saved on quit. |
+| `kc.py` / `kc.bat` / `kc.lnk` | **DELETED** — kill role merged into `wc.py`. Do not resurrect. |
 
 ---
 
@@ -54,21 +57,25 @@ The user's standing demands (architectural constraints — do not regress):
 ### State tokens (selection column) — `wc_core.py`
 ```
 OFF         " "   [ ]  not selected
-ON          "x"   [x]  selected to run
-RUN         "-"   [-]  detected as actually running (live)
-LEFT_ALONE  "_"   [.]  don't touch on Enter/kill  (tc/kc only)
+ON          "x"   [X]  selected to act on (Space toggles)
+RUN         "-"   [-]  detected as actually running (live, INFO only)
 ```
+`[-]` is info only — you cannot "cancel" it by keypress; to stop a running
+work you select it `[X]` and press Enter (which kills it).
 
-### Detection (`is_running`)
-PowerShell one-liner over `Win32_Process`; excludes `powershell*` and self PID;
-matches any token in `titles_for(work)` (= explicit `match`, else `.bat` basename).
-Used by both wc (to show `[-]`) and tc (to list running).
+### Detection (`scan_commandlines` + `is_running`)
+A SINGLE PowerShell call to `Get-CimInstance Win32_Process` returns ALL
+command lines once; `is_running`/`live_running`/`registry_running`/`poll_launch`
+reuse that list and match tokens in pure Python (no per-work rescan). This is
+~9x faster than the old per-work loop and does NOT block the key loop.
+Excludes `powershell*` and self PID. `WINDOWTITLE` is not used.
 
-### Launch (`run_work`)
-`cmd.exe /c start "" <bat>` → spawns a new **visible** console window, then
-`register(work)` writes `registry.json`.
-> Past bug (fixed): a stray second `""` made `start` open the folder in Explorer
-> instead of running the `.bat`. Keep exactly one `""` title placeholder.
+### Launch (`launch_work`)
+`cmd.exe /c start "" <bat>` → spawns a new **visible** console window.
+(`start` must have exactly one `""` title placeholder — a stray second `""`
+made it open Explorer instead. Do not regress.)
+`wc` no longer auto-closes after launch (it is a persistent manager now, not a
+transient launcher).
 
 ### Kill (`kill_work`)
 PowerShell `Invoke-CimMethod -MethodName Terminate` on every process whose
@@ -81,69 +88,59 @@ OR). Space on a group toggles ALL children; clearing any child clears the group.
 `build_model` skips works that are members of a group (no duplicate standalone).
 
 ### wc.py behavior today
-Inline tree, cursor nav (Up/Down), `Space`/`t` toggle select, `Enter` runs
-(`[x]`) or kills (`[-]`) the node and its members, `Esc`/`q` quit. Saves preset
-to `wc.settings.txt` on exit. **Persists as a menu after every action.**
+Inline tree, cursor nav (Up/Down), `Space`/`t` toggles select `[ ]`↔`[X]`,
+`Enter` acts on every `[X]` node — KILL if running (`[-]`) else LAUNCH.
+`Esc`/`q` quit. Saves preset to `wc.settings.txt` on exit.
+Live `[-]` refreshed by a background thread (never blocks keys).
 
-### kc.py behavior today
-Lists only registry entries still alive, `Enter` kills, `t` leaves-alone,
-`Esc`/`q` quit.
+### Key capture (IMPORTANT — see §4 bug)
+`get_key()` reads the console INPUT buffer directly via `ReadConsoleInput`
+(ctypes), NOT `msvcrt.getch()`. QuickEdit/Mouse console modes are disabled on
+startup so a mouse click inside the window does not freeze keyboard input.
 
 ---
 
-## 4. TASK — split wc/kc into wc + tc
+## 4. TASK — merge kill into wc, delete kc
 
-**Why:** wc doing select+run AND running-state+kill is "too much". Separate the
-kill/running concern into its own tool (`tc`), and make wc a pure launcher.
+**Why:** Keeping kill in a separate `kc` tool meant the user had to juggle two
+windows and `kc` "couldn't be used". Decision: collapse everything into `wc`.
 
-### 4.1 wc.py — slim to SELECT + RUN only
-- **Remove** the `[-]` (RUN) state and all kill logic from wc.
-- wc becomes: pick works/groups (Space), `Enter` runs selected. No running
-  detection column, no kill.
-- **On `Enter`:** spawn each selected work in its OWN visible window (via
-  `launch_work_tracked`, which wraps the real `.bat` in a `wc_logs/<id>.track.bat`
-  that tees output to `<id>.log.txt` and writes a `__WC_DONE__ <code>` sentinel),
-  then **show per-terminal launch progress** (running -> ready/stable/done/failed),
-  then **close wc's own window** (wc exits — transient launcher, not a menu).
-  - Consequence: `wc.bat`'s trailing `pause` was REMOVED (wc self-exists).
-- **Per-terminal progress semantics** (`poll_launch` in `wc_core.py`):
-  - `ready`  — a `ready` marker string (from `work["ready"]`) appeared in the log.
-  - `stable` — still alive past `GRACE_SECONDS` with no error/ready (server up).
-  - `done`   — `.bat` exited 0 (e.g. Unity finished opening).
-  - `failed` — non-zero exit, error keyword in log, or process vanished.
-- **ANTI-RUNAWAY SAFETY (do NOT remove):**
-  - `launch_work_tracked` never spawns more than `MAX_LAUNCHES` (16) windows
-    total, and refuses to spawn a 2nd window for a work already alive
-    (`_already_tracked_alive`).
-  - `poll_launch` declares `stable` after `STABLE_MAX_SECONDS` (60) so the
-    monitor loop is ALWAYS finite.
-  - `wc.run_phase` monitor loop has a hard `MONITOR_SECONDS` ceiling and on
-    error shows it for only `FAILED_VIEW_SECONDS` then closes. **No `while True`
-    without a deadline anywhere in the launch path.**
-  - Past incident: an unbounded poll loop + `start` spawning spiked the host.
-    These caps exist specifically to stop that class of bug.
+### 4.1 wc.py — SELECT + KILL + LAUNCH (done)
+- Space toggles `[ ]`↔`[X]` (select what to act on).
+- Enter on a `[X]` node: if running (`[-]`) → KILL; else → LAUNCH.
+- Live `[-]` marker via background thread.
+- Key capture via `ReadConsoleInput` + QuickEdit disabled.
 
-### 4.2 kc.py — the kill combo (NOTE: "tc" was a typo; the tool is `kc`)
-- `kc` lists **currently-running** works (from `registry.json` — only what wc
-  launched) and lets you kill them with `Enter`; `t` leaves-alone; Esc/q quit.
-  Flat list (no inline tree). This is unchanged behavior.
-- **kc must run in a real visible window** — `kc.bat` was ADDED for this
-  (before, kc had no launcher and looked "backgrounded"). `kc.bat` opens a
-  console and stays until quit, like `wc.bat` minus the auto-close.
+### 4.2 kc — DELETED
+`kc.py`, `kc.bat`, `kc.lnk` removed (commit `f4aa58f`). Kill lives in `wc` now.
+Do not bring kc back.
 
-### 4.3 things to delete / rename
-- Nothing renamed. `kc.py` is the kill tool (not `tc`). `wc.py` is the launcher.
-- `[-]`/`LEFT_ALONE` handling lives ONLY in kc (removed from wc).
+### 4.3 OPEN BUG — wc select+kill does NOT work in the real window yet
+Status: **NOT FIXED / UNVERIFIED.**
+- The state machine is proven correct via headless simulation (Space → `[X]`,
+  Enter → kill/launch, Esc → quit all work).
+- BUT on the user's actual machine, pressing `Space` in the `wc.bat` window
+  does NOT toggle `[ ]`→`[X]` — i.e. key capture fails in the live window.
+- Attempted fix: switched `get_key()` to `ReadConsoleInput` (ctypes) and
+  disabled QuickEdit (commit `d04d0c6`). This is UNVERIFIED — the user must
+  re-test `wc.bat`. If it still fails, the window is likely not receiving
+  console input (focus / spawn issue) and we must fall back to a different
+  input path (e.g. non-blocking `kbhit`/`getch` loop, or reading from a pipe).
+- **Do NOT claim DONE until the user confirms Space-select + Enter-kill works
+  in the real `wc.bat` window.**
 
 ---
 
 ## 5. Verification (how to prove DONE)
 - `python test_wc_core.py` passes (model build, detection, group OR, kill-via-group,
-  LEFT_ALONE no-op). Extend it to cover the new wc/tc split if logic moves.
-- Manual smoke (Windows): `wc.bat` opens, selecting a group + Enter spawns each
-  work's window and wc then closes itself; `kc.bat` opens a window, lists the
-  running works (from registry.json), `Enter` kills them and they disappear.
+  Space OFF→ON → Enter acts). — **PASSING.**
+- Headless key-sequence simulation confirms the state machine: Space → `[X]`,
+  Enter → kill/launch, Esc → quit. — **PASSING.**
+- **OUTSTANDING:** Manual smoke on Windows — open `wc.bat`, press `Space` on a
+  work, confirm `[ ]`→`[X]`, press `Enter`, confirm a running `[-]` work is
+  KILLED (and a not-running one is launched). This is the gate for DONE and is
+  currently failing / unverified.
 - Confirm killing covers both the `cmd` host and child `node.exe` (npm dev).
-- Confirm wc can NEVER hang the host: `MAX_LAUNCHES`, `STABLE_MAX_SECONDS`, and
-  the `run_phase` deadline are all in place. No unbounded `while True` in the
-  launch path.
+- Confirm wc never hangs the host: `scan_commandlines` is a single scan, the
+  live `[-]` monitor is a background thread with a 2s sleep (finite), no
+  unbounded `while True` in the key path.
