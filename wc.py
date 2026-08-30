@@ -10,14 +10,18 @@ Keys:
   Up/Down  : move cursor
   Space    : toggle select [ ] <-> [X]   (mark what you want to act on)
   Enter    : ACT on every [X] node --
-               * if it is running  [-]  -> KILL it
-               * if not running        -> LAUNCH it (open its window)
+               * if it is running  [-]  -> KILL it (window closes)
+               * if not running        -> LAUNCH it (opens its own window)
+  h        : HIDE / SHOW the cursor's work terminal window
+               (cursor on a [-] work -> hide it; cursor on the same again
+                or any other work -> toggle; never touches the wc window)
   t        : leave-alone (skip on Enter)   [reserved]
   Esc / q  : quit
 
 The [-] marker is LIVE (refreshed by a background thread, never blocks keys).
 It is info only -- you cannot "cancel" it by keypress; to stop a running work
-you select it [X] and press Enter (which kills it).
+you select it [X] and press Enter (which kills the whole process tree AND
+closes the visible window).
 
 Selection is remembered in wc.settings.txt (loaded on start / saved on quit).
 """
@@ -66,7 +70,65 @@ def start_running_monitor(manifest):
     t.start()
 
 
+# ---------------------------------------------------------------------------
+# Per-work window hide/show. `h` on a [-] work hides that work's terminal
+# (the cmd / bat / npx window the user is staring at). Press `h` again to
+# bring it back. The wc window itself is NEVER touched by this.
+# ---------------------------------------------------------------------------
+_hidden_hwnds: dict[str, list[int]] = {}  # work_key -> list of HWNDs we've hidden
+SW_HIDE = 0
+SW_SHOWNOACTIVATE = 4
+SW_RESTORE = 9
+
+
+def _show_hide_work(work_key: str, hwnds: list[int], mode: int) -> int:
+    """Show or hide a list of HWNDs. Returns the count of windows that
+    actually changed state. Uses ShowWindowAsync so we don't deadlock if
+    the owning thread is the one calling us."""
+    if not hwnds:
+        return 0
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.ShowWindowAsync.restype = ctypes.c_int
+    except Exception:
+        return 0
+    changed = 0
+    for h in hwnds:
+        try:
+            if user32.ShowWindowAsync(h, mode):
+                changed += 1
+        except Exception:
+            pass
+    return changed
+
+
+def toggle_work_window(node) -> str:
+    """Hide the cursor's work terminal if visible; restore if hidden. Returns
+    a human-readable status string."""
+    if node.kind != "work" or not node.work:
+        return "h works on a running work line (cursor on [-])"
+    if not node.is_running():
+        return f"'{node.label}' is not running -- nothing to hide"
+    hwnds = core.find_work_hwnds(node.work)
+    if not hwnds:
+        return f"'{node.label}' is running but its window was not found"
+    key = node.key
+    if key in _hidden_hwnds and _hidden_hwnds[key]:
+        # Currently hidden -> show
+        n = _show_hide_work(key, _hidden_hwnds.pop(key), SW_RESTORE)
+        return f"Restored '{node.label}' ({n} window)"
+    # Currently visible (or first time) -> hide
+    n = _show_hide_work(key, hwnds, SW_HIDE)
+    if n:
+        _hidden_hwnds[key] = hwnds
+        return f"Hidden '{node.label}' (h again to restore)"
+    return f"Could not hide '{node.label}'"
+
+
 def is_node_running(n) -> bool:
+    """True if node `n` is a work node currently detected as running (live)."""
     if not n.work:
         return False
     with _running_lock:
@@ -100,7 +162,7 @@ def flatten(model):
 def render(model, states, cursor, status):
     clear()
     print(f"{BOLD}  WORK COMBO  -  manage works (launch / kill){RESET}")
-    print(f"{DIM}  [X]=select(Space)  [-]=running(info)  Enter: kill[-]/launch  Esc/q: quit{RESET}")
+    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: hide work terminal  Esc/q: quit{RESET}")
     if status:
         print(f"  {YELLOW}{status}{RESET}")
     print()
@@ -318,6 +380,12 @@ def main():
             except Exception:
                 pass
             return
+
+        if ch == "h" or ch == "H":
+            # Hide / show the cursor's WORK terminal window (not wc).
+            node = rows[cursor][0]
+            status = toggle_work_window(node)
+            continue
 
         if ch == "UP":
             cursor = (cursor - 1) % len(rows)

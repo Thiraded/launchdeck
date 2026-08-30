@@ -129,6 +129,101 @@ Status: **NOT FIXED / UNVERIFIED.**
 - **Do NOT claim DONE until the user confirms Space-select + Enter-kill works
   in the real `wc.bat` window.**
 
+### 4.4 wc_tray.py — system tray (added 2026-08-30)
+**Goal:** hide the wc console to a system-tray icon; pop a balloon when a
+launched work is detected live. Press `h` in wc → tray, left-click toggles
+window, right-click menu Show/Hide/Quit. X still really quits.
+
+**Critical ctypes traps found in the field (do not regress):**
+1. `kernel32.GetModuleHandleW(None)` MUST have its prototype set
+   (`argtypes=[c_wchar_p]`, `restype=c_void_p`). Default 32-bit `int`
+   return truncates the 64-bit handle on x64 Python → `CreateWindowExW`
+   silently returns NULL → tray "not available" with no error.
+2. The tray window CANNOT be `HWND_MESSAGE`. `TrackPopupMenu` requires a
+   real top-level window that can be `SetForegroundWindow`-ed; on a
+   message-only window, the menu pops but clicks vanish. Use
+   `WS_POPUP` + `hWndParent=None`.
+3. Popup-menu items deliver via `WM_COMMAND` with the command id in
+   `wParam` low word. `WndProc` MUST handle `WM_COMMAND` or "Show /
+   Hide / Quit" are dead.
+4. For "Quit" from the tray, don't `os._exit(0)` blindly — wc's main
+   loop is blocked in `get_key`. Write a synthetic Esc to the console
+   input buffer (`WriteConsoleInputW` + `KEY_EVENT`) so the loop unwinds
+   cleanly and the preset saves. Fall back to `_exit` only if that fails.
+5. Diagnostic log lives at `wc_logs/tray.log`; each step of `_run` and
+   `GetLastError` codes are recorded so future failures are visible.
+
+**Tricky truth:** `wc_tray.hide_console` only hides the **wc** console
+(`GetConsoleWindow()` of the wc process). It does NOT hide the .bat
+windows each work opened (per AGENTS.md rule: works stay visible). So
+pressing `h` cleans up the wc TUI; the work windows stay on screen —
+that's the intended split.
+
+### 4.5 kill_work — process tree (added 2026-08-30, after 2 stale-kill bugs)
+**Original problem:** `kill_work` matched CommandLine tokens and Terminated
+those PIDs only. For works like `gpt-mcp` whose bat spawned a nested
+`start "X" cmd /k npx ...`, the cmd host window did not contain the
+match token, so the npx child died but the cmd window stayed open as
+a zombie. Reported by user: "kill says Killed but terminal stays alive".
+
+**Fix:** Walk the process tree in PowerShell, both directions:
+1. seed = any PID whose CommandLine contains a match token
+2. walk descendants of seeded PIDs (BFS via `$children` map)
+3. walk ancestors of seeded PIDs up to (but not past) `$me` (the
+   PowerShell's own PID) and never into `powershell*`
+4. For each *top-of-tree* cmd.exe in the kill set, `Terminate` it (this
+   is the user's visible window -- Terminate the cmd host directly, not
+   just its child npx). The conhost attached to the cmd is reparented
+   to `wininit` when the cmd dies, so it closes too.
+5. Belt-and-braces: re-query the top cmd.exe PIDs and `taskkill /F /T`
+   each. `/T` kills the whole tree (cmd + npx + conhost) in one shot;
+   this is what reliably closes the visible window.
+
+**Critical PowerShell traps hit while writing this (do not regress):**
+1. `-Command` on the command line CANNOT host multi-line `while`,
+   `foreach`, etc. — it parses as one statement. The fix is to write
+   the script to a temp .ps1 and use `-File`. Trying to be clever with
+   `& { ... }` still fails because the top-level parser tokenizes each
+   `;`-separated fragment as a complete statement.
+2. **`$PID` is read-only.** Using `$pid` (any case) as a `foreach` loop
+   variable raises `Cannot overwrite variable PID because it is
+   read-only or constant` — and because we wrapped the body in
+   `SilentlyContinue` + `-File`, the error was SWALLOWED silently. The
+   `foreach ($pid in $kill)` block never executed. Use `$kpid` or any
+   other name.
+3. `Get-CimInstance Win32_Process` is the right API (not `Get-Process`).
+   `Get-Process` doesn't expose CommandLine; you only get truncation.
+
+### 4.6 h key — hide the cursor's WORK terminal (added 2026-08-30)
+**Original problem (re-think):** `h` was hiding the **wc** console to
+the system tray. User then asked for the tray icon removed and to hide
+the work terminal instead, because hunting for the work window behind
+several open terminals is the actual pain point.
+
+**New behavior:**
+- `h` on a work line that is `[-]` (running) -> find the HWNDs of that
+  work's process tree and `ShowWindowAsync(SW_HIDE)` them all.
+- `h` again on the same work (or any work) -> restore with
+  `ShowWindowAsync(SW_RESTORE)`. Hidden state is tracked per work in
+  `_hidden_hwnds: dict[key -> list[hwnd]]`.
+- `h` on a `not-running` work line -> status message "not running,
+  nothing to hide" (no-op).
+- The wc console is NEVER touched. No tray, no minimize, no nothing.
+
+**How we find the HWNDs (`find_work_hwnds` in wc_core.py):**
+1. PowerShell: enumerate `Get-CimInstance Win32_Process`, collect
+   PIDs whose CommandLine contains a work match token. Returns the
+   PIDs as plaintext.
+2. PowerShell: walk each PID up to its top-of-tree ancestor (skipping
+   self, powershell*) so we also pick up the `cmd /c start ""` host.
+3. ctypes `EnumWindows` over all top-level windows; keep HWNDs whose
+   `GetWindowThreadProcessId` PID is in the set AND
+   `IsWindowVisible(hwnd)`.
+
+`wc_tray.py` is no longer imported. The file is left on disk for
+reference but is dead code -- do not bring it back unless we need a
+tray again.
+
 ---
 
 ## 5. Verification (how to prove DONE)

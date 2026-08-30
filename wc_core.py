@@ -144,31 +144,269 @@ def run_work(work: dict) -> None:
 
 
 def kill_work(work: dict) -> None:
-    """Kill processes whose CommandLine contains our match token(s) or proj
-    path (covers the console cmd AND child node.exe from npm run dev)."""
+    """Kill the work's whole process tree, INCLUDING the conhost/console
+    window -- so the visible window actually closes (like Alt+F4), not just
+    the inner command (which is what Terminate alone does).
+
+    Strategy:
+      1) Run the same process-tree walk as before (match token -> add PIDs
+         + descendants + ancestors, stop at $me / powershell*).
+      2) After walking, `taskkill /F /T` each top-level cmd.exe PID we
+         discovered. `/F` = force, `/T` = with children (this is what takes
+         down the conhost window the user is staring at).
+      3) Fall back to plain `Terminate` for non-cmd PIDs (npx, node, etc.)
+         so the whole process tree is guaranteed dead.
+
+    The script is written to a temp .ps1 file and run with `powershell
+    -File` because `-Command` won't accept multi-line `while`/`foreach`
+    blocks in the form we need. `$PID` (read-only) is shadowed as `$kpid`
+    inside loop variables.
+    """
     toks = kill_tokens_for(work)
     if not toks:
         return
+    toks_ps = ",".join("'" + t.replace("'", "''") + "'" for t in toks)
+    ps_script = f"""$ErrorActionPreference = 'SilentlyContinue'
+$me = $PID
+$toks = @({toks_ps})
+$kill = New-Object System.Collections.Generic.HashSet[int]
+$cmds = New-Object System.Collections.Generic.HashSet[int]
+foreach ($p in (Get-CimInstance Win32_Process)) {{
+  if ($null -eq $p.CommandLine) {{ continue }}
+  if ($p.Name -like 'powershell*') {{ continue }}
+  if ($p.ProcessId -eq $me) {{ continue }}
+  foreach ($t in $toks) {{
+    if ($p.CommandLine -like ('*' + $t + '*')) {{
+      [void]$kill.Add($p.ProcessId); break
+    }}
+  }}
+}}
+$procById = @{{}}
+foreach ($p in (Get-CimInstance Win32_Process)) {{ $procById[$p.ProcessId] = $p }}
+$children = @{{}}
+foreach ($p in $procById.Values) {{
+  if ($null -ne $p.ParentProcessId) {{
+    if (-not $children.ContainsKey($p.ParentProcessId)) {{ $children[$p.ParentProcessId] = @() }}
+    $children[$p.ParentProcessId] += $p.ProcessId
+  }}
+}}
+$frontier = @($kill)
+while ($frontier.Count -gt 0) {{
+  $next = @()
+  foreach ($kpid in $frontier) {{
+    if ($children.ContainsKey($kpid)) {{
+      foreach ($c in $children[$kpid]) {{
+        if ($kill.Add($c)) {{ $next += $c }}
+      }}
+    }}
+  }}
+  $frontier = $next
+}}
+foreach ($kpid in @($kill)) {{
+  $cur = $kpid
+  while ($true) {{
+    $p = $procById[$cur]
+    if ($null -eq $p) {{ break }}
+    $ppid = $p.ParentProcessId
+    if ($ppid -eq 0 -or $ppid -eq $me) {{ break }}
+    $parent = $procById[$ppid]
+    if ($null -eq $parent) {{ break }}
+    if ($parent.Name -like 'powershell*') {{ break }}
+    if ($kill.Add($ppid)) {{ $cur = $ppid }} else {{ break }}
+  }}
+}}
+# Collect the top-of-tree cmd.exe PIDs (the ones whose window the user
+# sees) so we can taskkill /T them -- Terminate alone leaves the conhost
+# window alive as a zombie.
+foreach ($kpid in $kill) {{
+  $cur = $kpid
+  while ($true) {{
+    $p = $procById[$cur]
+    if ($null -eq $p) {{ break }}
+    $ppid = $p.ParentProcessId
+    if ($ppid -eq 0 -or $ppid -eq $me) {{ break }}
+    $parent = $procById[$ppid]
+    if ($null -eq $parent) {{ break }}
+    if ($parent.Name -like 'powershell*') {{ break }}
+    if (-not $kill.Contains($ppid)) {{ break }}
+    $cur = $ppid
+  }}
+  $top = $procById[$cur]
+  if ($null -ne $top -and $top.Name -eq 'cmd.exe') {{
+    [void]$cmds.Add($cur)
+  }}
+}}
+foreach ($cmdPid in $cmds) {{
+  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $cmdPid) -ErrorAction SilentlyContinue
+  if ($null -ne $proc) {{
+    $proc | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null
+  }}
+}}
+foreach ($kpid in $kill) {{
+  if (-not $cmds.Contains($kpid)) {{
+    Get-CimInstance Win32_Process -Filter ('ProcessId=' + $kpid) -ErrorAction SilentlyContinue |
+      ForEach-Object {{ $_ | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }}
+  }}
+}}
+"""
+    script_path = None
+    try:
+        import tempfile
+        fd, script_path = tempfile.mkstemp(prefix="wc_kill_", suffix=".ps1", text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(ps_script)
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        # Also belt-and-braces: taskkill /F /T the top cmd.exe PIDs. The PS
+        # script above handles the tree but if a conhost slips through, this
+        # is the nuclear option. /T kills the whole tree.
+        try:
+            out = r.stdout or ""
+            import re
+            pids = [int(x) for x in re.findall(r"\b(\d{2,7})\b", out) if 10 < int(x) < 10**8]
+        except Exception:
+            pids = []
+        # Re-walk to find top-of-tree cmd PIDs in Python (cheap: one
+        # powershell call) and taskkill each /F /T.
+        try:
+            tk_ps = (
+                "$me = $PID; "
+                "$toks = @(" + toks_ps + "); "
+                "$top = New-Object System.Collections.Generic.HashSet[int]; "
+                "foreach ($p in (Get-CimInstance Win32_Process)) { "
+                "  if ($p.Name -ne 'cmd.exe') { continue } "
+                "  if ($null -eq $p.CommandLine) { continue } "
+                "  if ($p.ProcessId -eq $me) { continue } "
+                "  foreach ($t in $toks) { "
+                "    if ($p.CommandLine -like ('*' + $t + '*')) { "
+                "      [void]$top.Add($p.ProcessId); break "
+                "    } "
+                "  } "
+                "} "
+                "foreach ($p in $top) { Write-Output $p }"
+            )
+            tr = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", tk_ps],
+                capture_output=True, text=True, timeout=15,
+            )
+            for line in (tr.stdout or "").splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    subprocess.run(
+                        ["taskkill.exe", "/F", "/T", "/PID", line],
+                        capture_output=True, text=True, timeout=10,
+                    )
+        except Exception:
+            pass
+    except Exception:
+        pass
+    finally:
+        if script_path:
+            try: os.remove(script_path)
+            except Exception: pass
+    unregister(work)
+
+
+# --------------------------------------------------------------------------
+# Find the visible HWNDs owned by a work's process tree. Used by `h` to
+# hide/show that work's terminal window without killing the process.
+# --------------------------------------------------------------------------
+def find_work_hwnds(work: dict) -> list[int]:
+    """Return the HWNDs of every top-level window whose owning PID belongs
+    to the work's process tree (i.e. processes whose CommandLine contains
+    one of the work's match tokens). Returned HWNDs are safe to pass to
+    ShowWindow / PostMessage."""
+    toks = kill_tokens_for(work)
+    if not toks:
+        return []
+    # 1) collect candidate PIDs in pure Python
+    cls = scan_commandlines()
+    pids: set[int] = set()
+    # also need the PID for each CommandLine
     ps = (
-        "$toks = @('" + "','".join(toks) + "');"
-        "foreach ($p in (Get-CimInstance Win32_Process)) {"
-        "  if ($null -eq $p.CommandLine) { continue }"
-        "  if ($p.Name -like 'powershell*') { continue }"
-        "  foreach ($t in $toks) {"
-        "    if ($p.CommandLine -like \"*$($t)*\") {"
-        "      $p | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null"
-        "    }"
-        "  }"
+        "$me = $PID; "
+        "$toks = @(" + ",".join("'" + t.replace("'", "''") + "'" for t in toks) + "); "
+        "foreach ($p in (Get-CimInstance Win32_Process)) { "
+        "  if ($null -eq $p.CommandLine) { continue } "
+        "  if ($p.Name -like 'powershell*') { continue } "
+        "  if ($p.ProcessId -eq $me) { continue } "
+        "  foreach ($t in $toks) { "
+        "    if ($p.CommandLine -like ('*' + $t + '*')) { "
+        "      Write-Output $p.ProcessId; break "
+        "    } "
+        "  } "
         "}"
     )
     try:
-        subprocess.run(
+        r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True, text=True, timeout=20,
+            capture_output=True, text=True, timeout=15,
         )
+        for line in (r.stdout or "").splitlines():
+            line = line.strip()
+            if line.isdigit():
+                pids.add(int(line))
+    except Exception:
+        return []
+    if not pids:
+        return []
+    # 2) walk to ancestors so we also hide the cmd.exe host
+    try:
+        anc_ps = (
+            "$me = $PID; "
+            "$seeds = @(" + ",".join(str(p) for p in pids) + "); "
+            "$byId = @{}; foreach ($p in (Get-CimInstance Win32_Process)) { $byId[$p.ProcessId] = $p }; "
+            "$all = New-Object System.Collections.Generic.HashSet[int]; "
+            "foreach ($s in $seeds) { [void]$all.Add($s) }; "
+            "foreach ($s in $seeds) { "
+            "  $cur = $s; "
+            "  while ($true) { "
+            "    $p = $byId[$cur]; if ($null -eq $p) { break }; "
+            "    $ppid = $p.ParentProcessId; "
+            "    if ($ppid -eq 0 -or $ppid -eq $me) { break }; "
+            "    $par = $byId[$ppid]; if ($null -eq $par) { break }; "
+            "    if ($par.Name -like 'powershell*') { break }; "
+            "    if ($all.Add($ppid)) { $cur = $ppid } else { break } "
+            "  } "
+            "} "
+            "foreach ($x in $all) { Write-Output $x }"
+        )
+        ar = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", anc_ps],
+            capture_output=True, text=True, timeout=15,
+        )
+        for line in (ar.stdout or "").splitlines():
+            line = line.strip()
+            if line.isdigit():
+                pids.add(int(line))
     except Exception:
         pass
-    unregister(work)
+    # 3) find top-level windows owned by any of these PIDs (Win32 EnumWindows)
+    return _hwnds_for_pids(pids)
+
+
+def _hwnds_for_pids(pids: set[int]) -> list[int]:
+    """Enumerate ALL windows (not just top-level -- a console window can be
+    owned by the conhost of a child, which IS a top-level window but the
+    cmd.exe process itself has no visible window) and return HWNDs whose
+    owning PID is in `pids`. Pure ctypes, no PowerShell."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+    def cb(hwnd, _lparam):
+        pid = ctypes.c_ulong(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in pids:
+            # Only consider windows that are actually visible (not hidden,
+            # not zero-size, not tool windows).
+            if user32.IsWindowVisible(hwnd):
+                found.append(int(hwnd))
+        return 1
+    user32.EnumWindows(cb, 0)
+    return found
 
 
 # --------------------------------------------------------------------------
