@@ -15,11 +15,6 @@
       "id": "omniroutecombo",
       "label": "OmniRoute combo",
       "members": ["omniroute-cli", "omniroute-web"]
-    },
-    {
-      "id": "gptcombo",
-      "label": "GPT combo",
-      "members": ["gpt-web", "gpt-mcp"]
     }
   ],
   "works": [
@@ -71,13 +66,6 @@
       "label": "OmniRoute Web start",
       "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute Web start.bat",
       "match": "OmniRoute AI Gateway.lnk",
-      "detect": true
-    },
-    {
-      "id": "gpt-web",
-      "label": "GPT Web start",
-      "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\GPT Web MCP.bat",
-      "match": "tunnel-client",
       "detect": true
     },
     {

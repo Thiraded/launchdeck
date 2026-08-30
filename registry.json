@@ -9,19 +9,19 @@
     "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute CLI start.bat",
     "launched": "2026-08-30 12:56:59"
   },
-  "hamster-clint": {
-    "label": "Hamster-Clint start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Clint start.bat",
-    "launched": "2026-08-30 11:00:43"
-  },
   "hamster-server": {
     "label": "Hamster-Server start",
-    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamster-Server start.bat",
-    "launched": "2026-08-30 11:01:16"
+    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\HamsterServer.bat",
+    "launched": "2026-08-30 14:16:42"
   },
   "omniroute-web": {
     "label": "OmniRoute Web start",
     "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\OmniRoute Web start.bat",
     "launched": "2026-08-30 12:56:59"
+  },
+  "hamsterquest": {
+    "label": "Hamsterquest start",
+    "bat": "C:\\Users\\thira\\OneDrive\\Desktop\\Hamsterquest start.bat",
+    "launched": "2026-08-30 14:14:37"
   }
 }
