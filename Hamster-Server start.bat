@@ -2,19 +2,23 @@
 setlocal
 set "APPDIR=D:\projects\HamsterWorld\server"
 
-if not exist "%APPDIR%" (
-  echo [Hamster Server] %APPDIR% NOT FOUND (drive missing?).
-  echo Window left open for inspection.
-  pause
-  exit /b 1
-)
+if not exist "%APPDIR%" goto :no_appdir
+if not exist "%APPDIR%\package.json" goto :no_pkg
 
-if not exist "%APPDIR%\package.json" (
-  echo [Hamster Server] package.json not found in %APPDIR%
-  echo Window left open for inspection.
-  pause
-  exit /b 1
-)
-
-start "Hamster Server" cmd /k "cd /d \"%APPDIR%\" && call npm run dev"
+pushd "%APPDIR%"
+start "Hamster Server" cmd /k "call npm run dev"
+popd
 echo [Hamster Server] started.
+exit /b 0
+
+:no_appdir
+echo [Hamster Server] %APPDIR% NOT FOUND -- drive missing.
+echo Window left open for inspection.
+pause
+exit /b 1
+
+:no_pkg
+echo [Hamster Server] package.json not found in %APPDIR%
+echo Window left open for inspection.
+pause
+exit /b 1
