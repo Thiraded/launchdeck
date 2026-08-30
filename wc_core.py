@@ -74,10 +74,27 @@ def titles_for(work: dict) -> list[str]:
 
 
 def kill_tokens_for(work: dict) -> list[str]:
+    """Match tokens to kill a work's process tree. Beyond `match` and the bat
+    basename (titles_for), we also include a low-cardinality token derived
+    from the work id so the outer `cmd /K "bat.bat"` wrapper is reachable
+    even when it has no match token of its own (e.g. GPT MCP's wrapper
+    CommandLine is just `cmd /K "GPT MCP.bat`)."""
     toks = list(titles_for(work))
     proj = work.get("proj")
     if proj:
         toks.append(proj)
+    # Always add a token that the outer wrapper is GUARANTEED to contain
+    # (the bat basename, or the work id if no bat). This makes the
+    # outermost `cmd /K "bat.bat"` (the one whose window the user sees)
+    # a seed so the tree walk includes it.
+    bat = work.get("bat") or ""
+    if bat:
+        bn = os.path.basename(bat)
+        if bn and bn not in toks:
+            toks.append(bn)
+    wid = work.get("id") or ""
+    if wid and wid not in toks:
+        toks.append(wid)
     return toks
 
 
@@ -150,7 +167,9 @@ def kill_work(work: dict) -> None:
 
     Strategy:
       1) Run the same process-tree walk as before (match token -> add PIDs
-         + descendants + ancestors, stop at $me / powershell*).
+         + descendants + ancestors, stop at the python PID that called us
+         and at powershell*). The python PID is passed in as `-MyPID` so
+         we never walk past wc itself (catastrophic to kill wc).
       2) After walking, `taskkill /F /T` each top-level cmd.exe PID we
          discovered. `/F` = force, `/T` = with children (this is what takes
          down the conhost window the user is staring at).
@@ -165,9 +184,11 @@ def kill_work(work: dict) -> None:
     toks = kill_tokens_for(work)
     if not toks:
         return
+    my_pid = os.getpid()  # the python (wc) process -- HARD STOP for the walk
     toks_ps = ",".join("'" + t.replace("'", "''") + "'" for t in toks)
     ps_script = f"""$ErrorActionPreference = 'SilentlyContinue'
 $me = $PID
+$wcPID = {my_pid}
 $toks = @({toks_ps})
 $kill = New-Object System.Collections.Generic.HashSet[int]
 $cmds = New-Object System.Collections.Generic.HashSet[int]
@@ -175,6 +196,7 @@ foreach ($p in (Get-CimInstance Win32_Process)) {{
   if ($null -eq $p.CommandLine) {{ continue }}
   if ($p.Name -like 'powershell*') {{ continue }}
   if ($p.ProcessId -eq $me) {{ continue }}
+  if ($p.ProcessId -eq $wcPID) {{ continue }}
   foreach ($t in $toks) {{
     if ($p.CommandLine -like ('*' + $t + '*')) {{
       [void]$kill.Add($p.ProcessId); break
@@ -196,6 +218,7 @@ while ($frontier.Count -gt 0) {{
   foreach ($kpid in $frontier) {{
     if ($children.ContainsKey($kpid)) {{
       foreach ($c in $children[$kpid]) {{
+        if ($c -eq $wcPID -or $c -eq $me) {{ continue }}
         if ($kill.Add($c)) {{ $next += $c }}
       }}
     }}
@@ -208,7 +231,7 @@ foreach ($kpid in @($kill)) {{
     $p = $procById[$cur]
     if ($null -eq $p) {{ break }}
     $ppid = $p.ParentProcessId
-    if ($ppid -eq 0 -or $ppid -eq $me) {{ break }}
+    if ($ppid -eq 0 -or $ppid -eq $me -or $ppid -eq $wcPID) {{ break }}
     $parent = $procById[$ppid]
     if ($null -eq $parent) {{ break }}
     if ($parent.Name -like 'powershell*') {{ break }}
@@ -218,17 +241,20 @@ foreach ($kpid in @($kill)) {{
 # Collect the top-of-tree cmd.exe PIDs (the ones whose window the user
 # sees) so we can taskkill /T them -- Terminate alone leaves the conhost
 # window alive as a zombie.
-foreach ($kpid in $kill) {{
+foreach ($kpid in @($kill)) {{
   $cur = $kpid
   while ($true) {{
     $p = $procById[$cur]
     if ($null -eq $p) {{ break }}
     $ppid = $p.ParentProcessId
-    if ($ppid -eq 0 -or $ppid -eq $me) {{ break }}
+    if ($ppid -eq 0 -or $ppid -eq $me -or $ppid -eq $wcPID) {{ break }}
     $parent = $procById[$ppid]
     if ($null -eq $parent) {{ break }}
     if ($parent.Name -like 'powershell*') {{ break }}
-    if (-not $kill.Contains($ppid)) {{ break }}
+    # Walk ALL ancestors (not just those in $kill) so we also pick up
+    # the outer `cmd /K "bat.bat"` wrapper that has no match token in
+    # its own CommandLine. The user sees THAT window.
+    [void]$kill.Add($ppid)
     $cur = $ppid
   }}
   $top = $procById[$cur]
@@ -259,33 +285,47 @@ foreach ($kpid in $kill) {{
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script_path],
             capture_output=True, text=True, timeout=30,
         )
-        # Also belt-and-braces: taskkill /F /T the top cmd.exe PIDs. The PS
-        # script above handles the tree but if a conhost slips through, this
-        # is the nuclear option. /T kills the whole tree.
-        try:
-            out = r.stdout or ""
-            import re
-            pids = [int(x) for x in re.findall(r"\b(\d{2,7})\b", out) if 10 < int(x) < 10**8]
-        except Exception:
-            pids = []
-        # Re-walk to find top-of-tree cmd PIDs in Python (cheap: one
-        # powershell call) and taskkill each /F /T.
+        # Also belt-and-braces: taskkill /F /T the top cmd.exe PIDs in
+        # the ancestor chain. We DO NOT require the cmd to contain the
+        # match token in its own CommandLine -- the outer `cmd /K
+        # "bat.bat"` wrapper has no match token, but it's still the
+        # window the user is staring at.
         try:
             tk_ps = (
                 "$me = $PID; "
+                "$wcPID = " + str(my_pid) + "; "
                 "$toks = @(" + toks_ps + "); "
-                "$top = New-Object System.Collections.Generic.HashSet[int]; "
-                "foreach ($p in (Get-CimInstance Win32_Process)) { "
-                "  if ($p.Name -ne 'cmd.exe') { continue } "
+                "$byId = @{}; foreach ($p in (Get-CimInstance Win32_Process)) { $byId[$p.ProcessId] = $p }; "
+                "$seed = New-Object System.Collections.Generic.HashSet[int]; "
+                "foreach ($p in $byId.Values) { "
                 "  if ($null -eq $p.CommandLine) { continue } "
+                "  if ($p.Name -like 'powershell*') { continue } "
                 "  if ($p.ProcessId -eq $me) { continue } "
+                "  if ($p.ProcessId -eq $wcPID) { continue } "
                 "  foreach ($t in $toks) { "
                 "    if ($p.CommandLine -like ('*' + $t + '*')) { "
-                "      [void]$top.Add($p.ProcessId); break "
+                "      [void]$seed.Add($p.ProcessId); break "
                 "    } "
                 "  } "
                 "} "
-                "foreach ($p in $top) { Write-Output $p }"
+                "$all = New-Object System.Collections.Generic.HashSet[int]; "
+                "foreach ($s in $seed) { [void]$all.Add($s) }; "
+                "foreach ($s in $seed) { "
+                "  $cur = $s; "
+                "  while ($true) { "
+                "    $p = $byId[$cur]; if ($null -eq $p) { break }; "
+                "    $ppid = $p.ParentProcessId; "
+                "    if ($ppid -eq 0 -or $ppid -eq $me -or $ppid -eq $wcPID) { break }; "
+                "    $par = $byId[$ppid]; if ($null -eq $par) { break }; "
+                "    if ($par.Name -like 'powershell*') { break }; "
+                "    [void]$all.Add($ppid); "
+                "    if ($par.Name -eq 'cmd.exe') { $cur = $ppid } else { break } "
+                "  } "
+                "} "
+                "foreach ($p in $all) { "
+                "  $proc = $byId[$p]; "
+                "  if ($null -ne $proc -and $proc.Name -eq 'cmd.exe') { Write-Output $p } "
+                "}"
             )
             tr = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", tk_ps],

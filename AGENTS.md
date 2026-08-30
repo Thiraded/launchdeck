@@ -239,3 +239,50 @@ tray again.
 - Confirm wc never hangs the host: `scan_commandlines` is a single scan, the
   live `[-]` monitor is a background thread with a 2s sleep (finite), no
   unbounded `while True` in the key path.
+
+---
+
+## 6. Hermes self-discipline — machine-side-effect rule (added 2026-08-30)
+
+**Two prior incidents on the same day, both because I ran broad commands
+on a live user machine without checking what would be affected:**
+
+1. **Infinite terminal spawn** — wc launch / kill debugging loop
+   launched a runaway chain of windows the user had to manually close.
+2. **Killed the user's live windows** — while cleaning up GPT MCP test
+   leftovers, I ran `Get-CimInstance Win32_Process | Where-Object {
+   $_.CommandLine -like '*GPT MCP*' -or $_.CommandLine -like
+   '*modelcontextprotocol*' } | ForEach-Object { ...Terminate }`.
+   The user's own Discord, browser, and other open processes were
+   also matched by the loose pattern and killed.
+
+**Rule for any future session on this machine (and any user machine):**
+
+Before running ANY command that touches the user's live machine, answer
+THESE THREE QUESTIONS in writing in the response BEFORE executing:
+
+1. **What exact PIDs / names / paths will this affect?**
+   Write them out. A `Where-Object {$_.Name -like 'cmd*'}` is too broad.
+2. **Could any of those be the user's own open app?**
+   Discord, VS Code, browser, dev servers, terminals, the IDE, the
+   agent's own session — those are NOT test artifacts.
+3. **Am I sure this affects only the test target and nothing else?**
+   If the answer is "I don't know", STOP. Narrow the query (exact
+   PID, exact path, exact exe name) or ASK the user.
+
+**Default behavior:**
+
+- Narrow + exact (specific PID, specific path) over broad pattern
+- Show the target list to the user BEFORE killing, when in doubt
+- Never run a sweeping `Get-CimInstance | Where {...broad...} |
+  Terminate` on a live user machine
+- Test artifacts (fake workers, leftover cmds from previous tests) are
+  fine to clean up — but verify each one is actually a test artifact
+  (its parent / creation time / CommandLine signature) before Terminate
+- The user's open windows and dev sessions outrank my convenience. If a
+  cleanup step feels risky, skip it and ask.
+
+**Applies to:** taskkill, `Get-CimInstance | Invoke-CimMethod Terminate`,
+`Stop-Process`, `sc stop`, `net stop`, `reg delete`, `Remove-Item` (broad
+globs), `Format-Volume`, anything that mutates user-visible state on
+the host machine.

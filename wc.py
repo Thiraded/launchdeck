@@ -74,17 +74,21 @@ def start_running_monitor(manifest):
 # Per-work window hide/show. `h` on a [-] work hides that work's terminal
 # (the cmd / bat / npx window the user is staring at). Press `h` again to
 # bring it back. The wc window itself is NEVER touched by this.
+# `h` MINIMIZES the work's window to the taskbar (like a normal app that
+# runs in the background), not full hide. The user can click the taskbar
+# icon to bring it back. This is what "background" feels like for a
+# desktop app.
 # ---------------------------------------------------------------------------
-_hidden_hwnds: dict[str, list[int]] = {}  # work_key -> list of HWNDs we've hidden
-SW_HIDE = 0
+_minimized_hwnds: dict[str, list[int]] = {}  # work_key -> list of HWNDs we've minimized
+SW_SHOWMINIMIZED = 2
 SW_SHOWNOACTIVATE = 4
 SW_RESTORE = 9
 
 
-def _show_hide_work(work_key: str, hwnds: list[int], mode: int) -> int:
-    """Show or hide a list of HWNDs. Returns the count of windows that
-    actually changed state. Uses ShowWindowAsync so we don't deadlock if
-    the owning thread is the one calling us."""
+def _minimize_restore_work(work_key: str, hwnds: list[int], mode: int) -> int:
+    """Minimize or restore a list of HWNDs. Returns the count of windows
+    that actually changed state. Uses ShowWindowAsync so we don't deadlock
+    if the owning thread is the one calling us."""
     if not hwnds:
         return 0
     try:
@@ -105,26 +109,26 @@ def _show_hide_work(work_key: str, hwnds: list[int], mode: int) -> int:
 
 
 def toggle_work_window(node) -> str:
-    """Hide the cursor's work terminal if visible; restore if hidden. Returns
-    a human-readable status string."""
+    """Minimize the cursor's work terminal to the taskbar (background);
+    restore it if already minimized. Returns a human-readable status."""
     if node.kind != "work" or not node.work:
         return "h works on a running work line (cursor on [-])"
     if not node.is_running():
-        return f"'{node.label}' is not running -- nothing to hide"
+        return f"'{node.label}' is not running -- nothing to minimize"
     hwnds = core.find_work_hwnds(node.work)
     if not hwnds:
         return f"'{node.label}' is running but its window was not found"
     key = node.key
-    if key in _hidden_hwnds and _hidden_hwnds[key]:
-        # Currently hidden -> show
-        n = _show_hide_work(key, _hidden_hwnds.pop(key), SW_RESTORE)
+    if key in _minimized_hwnds and _minimized_hwnds[key]:
+        # Currently minimized -> restore
+        n = _minimize_restore_work(key, _minimized_hwnds.pop(key), SW_RESTORE)
         return f"Restored '{node.label}' ({n} window)"
-    # Currently visible (or first time) -> hide
-    n = _show_hide_work(key, hwnds, SW_HIDE)
+    # Currently visible (or first time) -> minimize to taskbar
+    n = _minimize_restore_work(key, hwnds, SW_SHOWMINIMIZED)
     if n:
-        _hidden_hwnds[key] = hwnds
-        return f"Hidden '{node.label}' (h again to restore)"
-    return f"Could not hide '{node.label}'"
+        _minimized_hwnds[key] = hwnds
+        return f"Minimized '{node.label}' to taskbar (h again to restore)"
+    return f"Could not minimize '{node.label}'"
 
 
 def is_node_running(n) -> bool:
@@ -162,7 +166,7 @@ def flatten(model):
 def render(model, states, cursor, status):
     clear()
     print(f"{BOLD}  WORK COMBO  -  manage works (launch / kill){RESET}")
-    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: hide work terminal  Esc/q: quit{RESET}")
+    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: minimize work to taskbar  Esc/q: quit{RESET}")
     if status:
         print(f"  {YELLOW}{status}{RESET}")
     print()
