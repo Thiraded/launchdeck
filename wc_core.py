@@ -16,6 +16,7 @@ Key concepts
 import json
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -290,7 +291,7 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
             )
     except Exception:
         pass
-    _HIDDEN_HWNDS.pop(work.get("id", ""), None)  # dead windows need no tracking
+    clear_hidden_work(work)  # dead windows need no tracking
     unregister(work)
     return None
 
@@ -393,6 +394,11 @@ def _hwnds_for_pids(pids: set[int]) -> list[int]:
     Pure ctypes + one PowerShell call, no deps."""
     import ctypes
     user32 = ctypes.windll.user32
+    user32.GetWindowThreadProcessId.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+    user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+    user32.IsWindowVisible.restype = ctypes.c_int
     # PID -> (parent, name) maps (one scan).
     parent: dict[int, int] = {}
     names: dict[int, str] = {}
@@ -487,119 +493,220 @@ def _hwnds_for_pids(pids: set[int]) -> list[int]:
 # enumerates as visible and can't be re-found by scan.
 # --------------------------------------------------------------------------
 _HIDDEN_HWNDS: dict[str, list[int]] = {}
+_HIDDEN_HWND_PIDS: dict[str, dict[int, int]] = {}
+_HIDDEN_LOCK = threading.RLock()
+_RESTORING_WORKS: set[str] = set()
+_WINDOW_OP_LOCKS: dict[str, threading.RLock] = {}
 
 
-def set_hwnds_visible(hwnds: list[int], show: bool) -> int:
-    """ShowWindowAsync(SW_SHOW/SW_HIDE) over `hwnds`. Returns changed count."""
+def _window_op_lock(wid: str) -> threading.RLock:
+    with _HIDDEN_LOCK:
+        return _WINDOW_OP_LOCKS.setdefault(wid, threading.RLock())
+
+
+def clear_hidden_work(work_or_id) -> None:
+    """Forget hidden-window tracking for a stopped or deleted work."""
+    wid = work_or_id if isinstance(work_or_id, str) else work_or_id.get("id", "")
+    with _window_op_lock(wid):
+        with _HIDDEN_LOCK:
+            _HIDDEN_HWNDS.pop(wid, None)
+            _HIDDEN_HWND_PIDS.pop(wid, None)
+            _RESTORING_WORKS.discard(wid)
+
+
+def _hwnd_owner_pids(hwnds: list[int]) -> dict[int, int]:
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.GetWindowThreadProcessId.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+        user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+    except Exception:
+        return {}
+    owners = {}
+    for hwnd in dict.fromkeys(hwnds):
+        try:
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value:
+                owners[hwnd] = int(pid.value)
+        except Exception:
+            pass
+    return owners
+
+
+def _valid_hwnds(hwnds: list[int], expected_pids: dict[int, int] | None = None) -> list[int]:
+    """Return unique handles that still identify live windows."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [ctypes.c_void_p]
+        user32.IsWindow.restype = ctypes.c_int
+    except Exception:
+        return []
+    owners = _hwnd_owner_pids(hwnds) if expected_pids is not None else {}
+    valid = []
+    for hwnd in dict.fromkeys(hwnds):
+        try:
+            if not hwnd or not user32.IsWindow(hwnd):
+                continue
+            if expected_pids is not None and owners.get(hwnd) != expected_pids.get(hwnd):
+                continue
+            valid.append(hwnd)
+        except Exception:
+            pass
+    return valid
+
+
+def _set_hwnds_visible_confirmed(hwnds: list[int], show: bool, expected_pids: dict[int, int] | None = None) -> list[int]:
+    """Request visibility and return handles confirmed in the target state."""
+    hwnds = _valid_hwnds(hwnds, expected_pids)
     if not hwnds:
-        return 0
+        return []
     try:
         import ctypes
         user32 = ctypes.windll.user32
         user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        user32.ShowWindowAsync.restype = ctypes.c_int
+        user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
     except Exception:
-        return 0
-    SW_HIDE, SW_SHOW = 0, 5
-    changed = 0
-    for h in hwnds:
+        return []
+    command = 9 if show else 0  # SW_RESTORE / SW_HIDE
+    for hwnd in hwnds:
         try:
-            if user32.ShowWindowAsync(h, SW_SHOW if show else SW_HIDE):
-                changed += 1
+            user32.ShowWindowAsync(hwnd, command)
         except Exception:
             pass
-    return changed
+    confirmed = []
+    for _ in range(20):
+        confirmed = []
+        for hwnd in hwnds:
+            try:
+                if bool(user32.IsWindowVisible(hwnd)) is show:
+                    confirmed.append(hwnd)
+            except Exception:
+                pass
+        if len(confirmed) == len(hwnds):
+            break
+        time.sleep(0.025)
+    return confirmed
+
+
+def set_hwnds_visible(hwnds: list[int], show: bool) -> int:
+    return len(_set_hwnds_visible_confirmed(hwnds, show))
 
 
 def hide_work_windows(work: dict, retries: int = 3) -> tuple[int, str]:
-    """True-hide a running work's windows (gone from taskbar + Alt+Tab).
-
-    Retries the scan: right after Start the wrapper window exists before
-    any matchable child (node) has spawned, so the first scan can miss
-    a window that is staring at the user. Only the miss path waits.
-    """
+    """True-hide a running work window while retaining restore handles."""
     wid = work.get("id", "")
-    hwnds = find_work_hwnds(work)
-    tries = 0
-    while not hwnds and tries < retries and is_running(work):
-        time.sleep(2.5)
-        tries += 1
+    with _window_op_lock(wid):
+        with _HIDDEN_LOCK:
+            if _HIDDEN_HWNDS.get(wid):
+                return 0, "already hidden"
         hwnds = find_work_hwnds(work)
-    if not hwnds:
-        if _HIDDEN_HWNDS.get(wid):
-            return 0, "already hidden"
-        if is_running(work):
-            return 0, "running but has no window (headless)"
-        return 0, "not running -- nothing to hide"
-    n = set_hwnds_visible(hwnds, False)
-    if n:
-        _HIDDEN_HWNDS[wid] = hwnds
-        return n, f"hid {n} window(s) — task still running"
-    return 0, "could not hide window"
+        tries = 0
+        while not hwnds and tries < retries and is_running(work):
+            time.sleep(2.5)
+            tries += 1
+            hwnds = find_work_hwnds(work)
+        hwnds = _valid_hwnds(hwnds)
+        if not hwnds:
+            if is_running(work):
+                return 0, "running but has no window (headless)"
+            return 0, "not running -- nothing to hide"
+        owners = _hwnd_owner_pids(hwnds)
+        hidden = _set_hwnds_visible_confirmed(hwnds, False, owners)
+        if hidden:
+            with _HIDDEN_LOCK:
+                restoring = wid in _RESTORING_WORKS
+                if not restoring:
+                    _HIDDEN_HWNDS[wid] = hidden
+                    _HIDDEN_HWND_PIDS[wid] = _hwnd_owner_pids(hidden)
+            if restoring:
+                _set_hwnds_visible_confirmed(hidden, True)
+                return 0, "hide cancelled by restore"
+            if len(hidden) == len(hwnds):
+                return len(hidden), f"hid {len(hidden)} window(s) -- task still running"
+            return len(hidden), f"partially hid {len(hidden)}/{len(hwnds)} window(s)"
+        return 0, "could not confirm hidden window"
 
 
 def show_work_windows(work: dict) -> tuple[int, str]:
-    """Restore windows hidden by hide_work_windows."""
+    """Restore tracked windows without racing the monitor re-hide sweep."""
     wid = work.get("id", "")
-    hwnds = _HIDDEN_HWNDS.get(wid) or []
-    if not hwnds:
-        return 0, "nothing hidden for this work"
-    n = set_hwnds_visible(hwnds, True)
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
-        for h in hwnds:
+    with _window_op_lock(wid):
+        with _HIDDEN_LOCK:
+            hwnds = list(_HIDDEN_HWNDS.pop(wid, []))
+            owners = dict(_HIDDEN_HWND_PIDS.pop(wid, {}))
+            if not hwnds:
+                return 0, "nothing hidden for this work"
+            _RESTORING_WORKS.add(wid)
+        valid = _valid_hwnds(hwnds, owners)
+        if not valid:
+            with _HIDDEN_LOCK:
+                _RESTORING_WORKS.discard(wid)
+            return 0, "hidden window no longer exists"
+        visible = _set_hwnds_visible_confirmed(valid, True, owners)
+        n = len(visible)
+        if n:
             try:
-                user32.SetForegroundWindow(h)
-                break
+                import ctypes
+                user32 = ctypes.windll.user32
+                user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+                user32.SetForegroundWindow.restype = ctypes.c_int
+                user32.SetForegroundWindow(visible[0])
             except Exception:
                 pass
-    except Exception:
-        pass
-    _HIDDEN_HWNDS.pop(wid, None)
-    return n, f"restored {n} window(s)"
+        with _HIDDEN_LOCK:
+            _RESTORING_WORKS.discard(wid)
+            remaining = [hwnd for hwnd in valid if hwnd not in visible]
+            if remaining:
+                _HIDDEN_HWNDS[wid] = remaining
+                _HIDDEN_HWND_PIDS[wid] = {h: owners[h] for h in remaining if h in owners}
+        if n == len(valid):
+            return n, f"restored {n} window(s)"
+        return n, f"restore incomplete ({n}/{len(valid)} visible)"
 
 
 def is_work_hidden(work: dict) -> bool:
-    return bool(_HIDDEN_HWNDS.get(work.get("id", "")))
+    with _HIDDEN_LOCK:
+        return bool(_HIDDEN_HWNDS.get(work.get("id", "")))
 
 
 def hidden_work_ids() -> set[str]:
-    """Ids of works currently marked hidden (have tracked HWNDs)."""
-    return {wid for wid, h in _HIDDEN_HWNDS.items() if h}
+    """Ids of works currently marked hidden."""
+    with _HIDDEN_LOCK:
+        return {wid for wid, hwnds in _HIDDEN_HWNDS.items() if hwnds}
 
 
 def sweep_hidden_windows(manifest: dict) -> dict[str, int]:
-    """Re-hide newly visible windows of hidden-marked works.
-
-    Dev servers fork fresh consoles AFTER hiding (npm/vite children);
-    the 3s monitor calls this so strays are re-hidden automatically.
-    Returns {work_id: newly_hidden_count}. No-op when nothing hidden.
-    """
-    reswept: dict[str, int] = {}
-    if not _HIDDEN_HWNDS:
-        return reswept
+    """Re-hide respawned windows, serialized with user restore."""
+    with _HIDDEN_LOCK:
+        candidates = [wid for wid in _HIDDEN_HWNDS if wid not in _RESTORING_WORKS]
     by_id = {w.get("id"): w for w in manifest.get("works", [])}
-    for wid in list(_HIDDEN_HWNDS):
-        w = by_id.get(wid)
-        if w is None:
+    reswept = {}
+    for wid in candidates:
+        work = by_id.get(wid)
+        if work is None:
             continue
-        try:
-            hwnds = find_work_hwnds(w)  # visible ones only
-        except Exception:
-            continue
-        if not hwnds:
-            continue
-        n = set_hwnds_visible(hwnds, False)
-        if n:
-            merged = list(dict.fromkeys(_HIDDEN_HWNDS.get(wid, []) + hwnds))
-            _HIDDEN_HWNDS[wid] = merged
-            reswept[wid] = n
+        with _window_op_lock(wid):
+            with _HIDDEN_LOCK:
+                if wid not in _HIDDEN_HWNDS:
+                    continue
+            try:
+                hwnds = _valid_hwnds(find_work_hwnds(work))
+            except Exception:
+                continue
+            owners = _hwnd_owner_pids(hwnds)
+            hidden = _set_hwnds_visible_confirmed(hwnds, False, owners)
+            if hidden:
+                with _HIDDEN_LOCK:
+                    merged = list(dict.fromkeys(_HIDDEN_HWNDS.get(wid, []) + hidden))
+                    _HIDDEN_HWNDS[wid] = merged
+                    _HIDDEN_HWND_PIDS[wid] = _hwnd_owner_pids(merged)
+                reswept[wid] = len(hidden)
     return reswept
 
 
-# --------------------------------------------------------------------------
 # registry  (so kc can list + kill running works quickly)
 # --------------------------------------------------------------------------
 def _load_registry() -> dict:

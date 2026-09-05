@@ -28,7 +28,7 @@ from tkinter import filedialog, messagebox
 from pathlib import Path
 
 import wc_core as core
-from wc_tray import TrayIcon
+from wc_tray import TrayIcon, WM_LBUTTONUP, WM_RBUTTONUP, WM_CONTEXTMENU
 
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "wc_logs" / "wctray.log"
@@ -118,7 +118,7 @@ def self_test():
     print("SELF-TEST OK")
     return 0
 
-ICON_CHOICES = ["⚡", "🖥", "🎮", "🌐", "📦", "🚀", "🔧", "🎨", "🤖", "💾", "📝", "🎵"]
+ICON_CHOICES = ["\u26a1", "\U0001f5a5", "\U0001f3ae", "\U0001f310", "\U0001f4e6", "\U0001f680", "\U0001f527", "\U0001f3a8", "\U0001f916", "\U0001f4be", "\U0001f4dd", "\U0001f3b5"]
 DOT_ON, DOT_OFF = "🟢", "⚪"
 
 # -- dark PowerToys-style theme (stdlib tk only, no deps) --------------------
@@ -163,6 +163,8 @@ _running: set = set()
 _lock = threading.Lock()
 _prev_running: set = set()
 actions = queue.Queue()  # tray thread -> tk thread requests ("toggle_ui", ...)
+
+tray_host = None  # the live WorkTray, set by main() for park/unpark wiring
 
 
 def running_snapshot():
@@ -318,8 +320,109 @@ ID_BASE = 5000  # per-work: BASE+i*2 = start/stop, +1 = hide/show
 
 
 class WorkTray(TrayIcon):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parked = {}
+        self._park_next = 100
+        self._park_lock = threading.RLock()
+
     def toggle_console(self):
         actions.put("toggle_ui")  # left-click -> dashboard popup
+
+    # parked work icons: wid -> {"uid": int, "hicon": handle}
+
+    def on_tray_event(self, uid, ev):
+        """Route main and parked icon clicks without racing icon cleanup."""
+        if uid in (0, 1):
+            if ev in (WM_LBUTTONUP, 0x0203):
+                actions.put("toggle_ui")
+            elif ev in (WM_RBUTTONUP, WM_CONTEXTMENU):
+                self._show_menu()
+            return
+        with self._park_lock:
+            match = next((wid for wid, info in self.parked.items()
+                          if info.get("uid") == uid), None)
+        if match is not None:
+            actions.put(("unpark", match))
+
+    def park_work(self, wid, label):
+        """Park a hidden work as its own tray icon. Idempotent."""
+        with self._park_lock:
+            if wid in self.parked:
+                return True
+            if not (self.hwnd and self._alive):
+                return False
+            uid = self._park_next
+            self._park_next += 1
+            hicon = self.add_work_icon(
+                uid, f"\U0001f7e2 {label} (hidden) -- click to restore")
+            if not hicon:
+                return False
+            self.parked[wid] = {"uid": uid, "hicon": hicon, "label": label}
+        log(f"parked '{label}' as tray icon uid={uid}")
+        try:
+            self.notify("Parked in tray", f"{label} -- click its icon to restore")
+        except Exception:
+            pass
+        return True
+
+    def unpark_work(self, wid, restore=True):
+        """Restore first; keep the icon when restoration is incomplete."""
+        with self._park_lock:
+            info = self.parked.get(wid)
+        if info is None:
+            return None
+        if restore:
+            work = work_by_id(wid)
+            if work is not None:
+                _count, message = core.show_work_windows(work)
+                if core.is_work_hidden(work):
+                    return message
+            else:
+                message = f"work '{wid}' no longer exists"
+        else:
+            message = f"unparked '{wid}'"
+        with self._park_lock:
+            info = self.parked.pop(wid, None)
+            if info is not None:
+                self.del_work_icon(info["uid"], info.get("hicon"))
+        return message
+
+    def sync_parked(self):
+        try:
+            hidden = core.hidden_work_ids()
+        except Exception:
+            return
+        with self._park_lock:
+            stale = [wid for wid in self.parked if wid not in hidden]
+        for wid in stale:
+            self.unpark_work(wid, restore=False)
+
+    def unpark_all(self):
+        with self._park_lock:
+            work_ids = list(self.parked)
+        for wid in work_ids:
+            self.unpark_work(wid, restore=False)
+
+    def _on_taskbar_created(self):
+        """Recreate parked icons after Explorer loses notification state."""
+        import ctypes
+        with self._park_lock:
+            for wid, info in list(self.parked.items()):
+                hicon = self.add_work_icon(
+                    info["uid"], f"\U0001f7e2 {info.get('label', wid)} (hidden)")
+                if hicon:
+                    old = info.get("hicon")
+                    info["hicon"] = hicon
+                    if old:
+                        try:
+                            ctypes.windll.user32.DestroyIcon(old)
+                        except Exception:
+                            pass
+
+    def _before_tray_shutdown(self):
+        self.unpark_all()
+
 
     def _show_menu(self):
         import ctypes
@@ -379,7 +482,15 @@ class WorkTray(TrayIcon):
             if act == "run":
                 log(toggle_start_stop(w))
             else:
-                log(toggle_hide_show(w))
+                msg = toggle_hide_show(w)
+                try:
+                    if core.is_work_hidden(w):
+                        self.park_work(wid, w.get("label", wid))
+                    else:
+                        self.unpark_work(wid, restore=False)
+                except Exception as e:
+                    log(f"menu park: {e}")
+                log(msg)
         except Exception as e:
             log(f"menu action failed: {e}")
 
@@ -446,24 +557,34 @@ class Dashboard:
         self.refresh()
         r.after(800, self._poll)
 
+    def _handle_action(self, action):
+        if action == "toggle_ui":
+            self.toggle()
+        elif action == "show_ui":
+            self.show()
+        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "unpark":
+            self._do_unpark_action(action[1])
+        elif action == "refresh":
+            self.refresh()
+        elif action == "quit":
+            try:
+                if tray_host is not None:
+                    tray_host.stop()
+            finally:
+                self.root.destroy()
+        else:
+            log(f"unknown action: {action!r}")
+
     def _poll(self):
-        try:
-            while True:
-                a = actions.get_nowait()
-                if a in ("toggle_ui",):
-                    self.toggle()
-                elif a == "show_ui":
-                    self.show()
-                elif a == "refresh":
-                    self.refresh()
-                elif a == "quit":
-                    try:
-                        self.root.destroy()
-                    except Exception:
-                        pass
-                    os._exit(0)
-        except queue.Empty:
-            pass
+        while True:
+            try:
+                action = actions.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                self._handle_action(action)
+            except Exception as e:
+                log(f"action {action!r} failed: {e}")
         try:
             self.root.after(250, self._poll)
         except Exception:
@@ -547,7 +668,7 @@ class Dashboard:
             row.pack(fill="x", pady=3, padx=2)
             topl = tk.Frame(row, bg=TH_CARD)
             topl.pack(fill="x", padx=8, pady=(6, 0))
-            tk.Label(topl, text="●", fg=dot_c, bg=TH_CARD,
+            tk.Label(topl, text="\u25cf", fg=dot_c, bg=TH_CARD,
                      font=("Segoe UI", 11)).pack(side="left")
             tk.Label(topl, text=f" {icon} {w.get('label', wid)}",
                      font=TH_FONT_B, bg=TH_CARD, fg=TH_FG).pack(side="left")
@@ -563,7 +684,7 @@ class Dashboard:
                       width=8).pack(side="left", padx=4)
             th_button(btns, "↻", lambda w=w: self._act_restart(w),
                       width=3).pack(side="left")
-            th_button(btns, "✏️", lambda w=w: self.open_editor(w),
+            th_button(btns, "\u270f\ufe0f", lambda w=w: self.open_editor(w),
                       width=3).pack(side="left", padx=(4, 0))
             th_button(btns, "🗑", lambda w=w: self.delete_work(w),
                       width=3).pack(side="left", padx=4)
@@ -573,7 +694,7 @@ class Dashboard:
             if not members:
                 continue
             on = sum(1 for m in members if m.get("id") in run)
-            gf = tk.LabelFrame(self.list_frame, text=f"  📁 {g.get('label', g.get('id'))}  ({on}/{len(members)})  ",
+            gf = tk.LabelFrame(self.list_frame, text=f"  \U0001f4c1 {g.get('label', g.get('id'))}  ({on}/{len(members)})  ",
                                font=("Segoe UI", 10, "bold"),
                                bg=TH_BG, fg=TH_ACCENT, relief="flat", bd=0,
                                labelanchor="nw")
@@ -585,7 +706,7 @@ class Dashboard:
             th_button(brow, text="▶ Start all",
                       command=lambda ms=members: self._act_all(ms, True),
                       width=10, accent=True).pack(side="left")
-            th_button(brow, text="⏹ Stop all",
+            th_button(brow, text="\u23f9 Stop all",
                       command=lambda ms=members: self._act_all(ms, False),
                       width=10).pack(side="left", padx=4)
         for w in manifest.get("works", []):
@@ -606,8 +727,17 @@ class Dashboard:
             msg = fn()
         except Exception as e:
             msg = f"failed: {e}"
+
+        def _done(m=msg):
+            self.say(m)
+            self.refresh(quiet=True)
+            try:
+                if tray_host is not None:
+                    tray_host.sync_parked()
+            except Exception as e:
+                log(f"park sync: {e}")
         try:
-            self.root.after(0, lambda m=msg: (self.say(m), self.refresh(quiet=True)))
+            self.root.after(0, _done)
         except Exception:
             pass
 
@@ -615,7 +745,21 @@ class Dashboard:
         self._act_async(lambda: toggle_start_stop(w), "working…")
 
     def _act_hide(self, w):
-        self._act_async(lambda: toggle_hide_show(w), "working…")
+        self._act_async(lambda: self._do_hide(w), "working…")
+
+    def _do_hide(self, w):
+        msg = toggle_hide_show(w)
+        try:
+            if core.is_work_hidden(w):
+                if tray_host is not None and tray_host.park_work(
+                        w["id"], w.get("label", w["id"])):
+                    msg += " — parked in tray ^"
+            else:
+                if tray_host is not None:
+                    tray_host.unpark_work(w["id"], restore=False)
+        except Exception as e:
+            log(f"park wiring: {e}")
+        return msg
 
     def _do_restart(self, w):
         try:
@@ -625,6 +769,18 @@ class Dashboard:
         time.sleep(1.5)
         rec = core.launch_work(w)
         return "restarted — fresh window" if rec else "start failed (bat missing?)"
+
+    def _do_unpark_action(self, wid):
+        """Work-icon click in tray: restore its window, drop the icon."""
+        if tray_host is None:
+            return
+        try:
+            res = tray_host.unpark_work(wid, restore=True)
+        except Exception as e:
+            res = f"restore failed: {e}"
+        if res is not None:
+            self.say(res)
+            self.refresh(quiet=True)
 
     def _act_restart(self, w):
         self._act_async(lambda: self._do_restart(w), "restarting…")
@@ -657,6 +813,12 @@ class Dashboard:
             for g in manifest.get("groups", []):
                 g["members"] = [m for m in g.get("members", []) if m != w.get("id")]
             core.MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+            core.clear_hidden_work(w)
+            try:
+                if tray_host is not None:
+                    tray_host.unpark_work(w.get("id", ""), restore=False)
+            except Exception:
+                pass
             self.say(f"deleted '{w.get('label')}'")
             self.refresh(quiet=True)
         except Exception as e:
@@ -785,6 +947,8 @@ def main():
         os._exit(0)
     ensure_single_instance()
     tray = WorkTray(tip=f"{APP_TIP} — starting…", color=(0, 120, 215))
+    global tray_host
+    tray_host = tray
     try:
         if not tray.start():
             log(f"tray not available: {tray.last_error}")
@@ -796,29 +960,6 @@ def main():
         dash.ensure()
         log("wctray ready (tray + dashboard up)")
 
-        def check_actions():
-            try:
-                while True:
-                    a = actions.get_nowait()
-                    if a == "toggle_ui":
-                        dash.toggle()
-                    elif a == "show_ui":
-                        dash.show()
-                    elif a == "quit":
-                        tray.stop()
-                        try:
-                            dash.root.destroy()
-                        except Exception:
-                            pass
-                        os._exit(0)
-            except queue.Empty:
-                pass
-            try:
-                dash.root.after(250, check_actions)
-            except Exception:
-                pass
-
-        dash.root.after(250, check_actions)
         dash.show()  # visible on startup: proves life, teaches where it lives
         try:
             dash.root.mainloop()

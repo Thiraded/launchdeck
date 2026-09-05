@@ -58,6 +58,7 @@ except Exception:
 # --------------------------------------------------------------------------
 WM_USER = 0x0400
 WM_DESTROY = 0x0002
+WM_APP_SHUTDOWN = WM_USER + 0x31
 WM_COMMAND = 0x0111
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
@@ -238,14 +239,18 @@ def _set_prototypes():
     user32.PostQuitMessage.argtypes = [ctypes.c_int]
     user32.PostQuitMessage.restype = None
 
+    user32.PostMessageW.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint64, ctypes.c_int64]
+    user32.PostMessageW.restype = ctypes.c_int
+
     user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
     user32.ShowWindow.restype = ctypes.c_int
 
     user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
     user32.SetForegroundWindow.restype = ctypes.c_int
 
-    user32.GetConsoleWindow.argtypes = []
-    user32.GetConsoleWindow.restype = ctypes.c_void_p
+    kernel32.GetConsoleWindow.argtypes = []
+    kernel32.GetConsoleWindow.restype = ctypes.c_void_p
 
     user32.CreatePopupMenu.argtypes = []
     user32.CreatePopupMenu.restype = ctypes.c_void_p
@@ -408,11 +413,13 @@ def make_square_icon(color=(0, 120, 215)):
         gdi32.DeleteObject(hbmp)
         gdi32.DeleteObject(hmask)
         return hicon
-    except Exception:
-        try:
-            return user32.LoadIconW(NULL, ctypes.c_void_p(IDI_APPLICATION))
-        except Exception:
-            return None
+    except Exception as e:
+        _tray_log(f"[icon] generation failed: {e}")
+        if hbmp:
+            gdi32.DeleteObject(hbmp)
+        if hmask:
+            gdi32.DeleteObject(hmask)
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -430,6 +437,16 @@ def _wndproc(hwnd, msg, wparam, lparam):
         # icon ID into the HIWORD of lParam -- compare the LOWORD event
         # only, or every click is silently swallowed.
         ev = int(lparam) & 0xFFFF
+        uid = (int(lparam) >> 16) & 0xFFFF
+        # Per-icon routing (parked work icons share this window): an
+        # instance-level hook gets first refusal with (uid, event).
+        handler = getattr(inst, "on_tray_event", None)
+        if callable(handler):
+            try:
+                handler(uid, ev)
+            except Exception as e:
+                _tray_log(f"[wndproc] on_tray_event failed: {e}")
+            return 0
         if ev in (WM_LBUTTONUP, 0x0203):  # 0x0203 = WM_LBUTTONDBLCLK
             try:
                 inst.toggle_console()
@@ -446,9 +463,20 @@ def _wndproc(hwnd, msg, wparam, lparam):
         return 0
     if msg == inst.taskbar_created:
         try:
-            inst._add_icon()
-        except Exception:
-            pass
+            if inst._add_icon():
+                inst.available = True
+                inst._on_taskbar_created()
+            else:
+                inst.available = False
+        except Exception as e:
+            inst.available = False
+            _tray_log(f"[taskbar] rebuild failed: {e}")
+        return 0
+    if msg == WM_APP_SHUTDOWN:
+        inst._shutdown_on_tray_thread()
+        return 0
+    if msg == WM_DESTROY:
+        user32.PostQuitMessage(0)
         return 0
     if msg == WM_COMMAND:
         # Menu item clicked: wParam low-word is the command id
@@ -479,14 +507,20 @@ class TrayIcon:
         self.console_hwnd = None
         self.taskbar_created = 0
         self.last_error = ""
+        self._init_ok = False
+        self._cleanup_done = False
+        self._cleanup_in_progress = False
         if _HAVE_WIN:
             try:
                 _set_prototypes()
                 self.taskbar_created = user32.RegisterWindowMessageW(
                     "TaskbarCreated")
                 self.console_hwnd = kernel32.GetConsoleWindow()
-            except Exception:
+                self._init_ok = True
+            except Exception as e:
                 self.console_hwnd = None
+                self.last_error = f"Win32 initialization failed: {e}"
+                _tray_log(f"[init] {self.last_error}: {_tb.format_exc()}")
 
     # -- lifecycle --------------------------------------------------------
     def _last_err(self):
@@ -508,8 +542,14 @@ class TrayIcon:
         if not _HAVE_WIN:
             self.last_error = "not Windows"
             return False
+        if not self._init_ok:
+            if not self.last_error:
+                self.last_error = "Win32 initialization incomplete"
+            return False
         if self._thread and self._thread.is_alive():
             return self.available
+        self._cleanup_done = False
+        self._cleanup_in_progress = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         for _ in range(150):  # up to ~3s: wait for icon to come up
@@ -550,7 +590,9 @@ class TrayIcon:
             _tray_log(f"[_run] hwnd={self.hwnd!r}")
 
             self.icon = make_square_icon(self.color)
-            self._add_icon()
+            if not self.icon or not self._add_icon():
+                self.last_error = self.last_error or "failed to add tray icon"
+                return
             self.available = True
             self._alive = True
             _tray_log("[_run] icon added — available=True")
@@ -564,28 +606,82 @@ class TrayIcon:
             self.available = False
             _tray_log(f"[_run] EXCEPTION: {e}\n{_tb.format_exc()}")
         finally:
-            try:
-                self._remove_icon()
-            except Exception:
-                pass
+            self._cleanup_native()
             self._alive = False
+            self.available = False
+            if _INSTANCE is self:
+                _INSTANCE = None
 
-    def stop(self):
+    def _on_taskbar_created(self):
+        """Subclass hook to rebuild secondary icons after Explorer restarts."""
+
+    def _before_tray_shutdown(self):
+        """Subclass hook executed on the tray thread before native cleanup."""
+
+    def _cleanup_native(self):
+        """Release native resources once, on the native window owner thread."""
+        if self._cleanup_done or self._cleanup_in_progress:
+            return
+        self._cleanup_in_progress = True
+        try:
+            self._before_tray_shutdown()
+        except Exception as e:
+            _tray_log(f"[cleanup] hook failed: {e}")
         try:
             if self.hwnd:
-                user32.PostQuitMessage(0)
-                # give the pump a moment to unwind; it's a daemon anyway
-                time.sleep(0.05)
-                user32.DestroyWindow(self.hwnd)
-        except Exception:
-            pass
+                self._remove_icon()
+        except Exception as e:
+            _tray_log(f"[cleanup] remove icon failed: {e}")
         try:
             if self.icon:
                 user32.DestroyIcon(self.icon)
                 self.icon = None
-        except Exception:
-            pass
+        except Exception as e:
+            _tray_log(f"[cleanup] destroy icon failed: {e}")
+        destroyed = not self.hwnd
+        try:
+            if self.hwnd:
+                destroyed = bool(user32.DestroyWindow(self.hwnd))
+        except Exception as e:
+            _tray_log(f"[cleanup] destroy window failed: {e}")
+        if destroyed:
+            self.hwnd = None
+        try:
+            if destroyed and self.hinst:
+                user32.UnregisterClassW("wcTrayClass", self.hinst)
+        except Exception as e:
+            _tray_log(f"[cleanup] unregister class failed: {e}")
+
+        self._cleanup_in_progress = False
+        self._cleanup_done = self.hwnd is None
+
+    def _shutdown_on_tray_thread(self):
+        self._cleanup_native()
+        user32.PostQuitMessage(0)
+
+    def stop(self, timeout=3.0):
+        """Ask the tray thread to tear down its own native window."""
+        thread = self._thread
+        if thread and thread.is_alive() and self.hwnd:
+            posted = False
+            try:
+                posted = bool(user32.PostMessageW(
+                    self.hwnd, WM_APP_SHUTDOWN, 0, 0))
+                if not posted:
+                    _tray_log(f"[stop] PostMessageW failed: {self._last_err()}")
+            except Exception as e:
+                _tray_log(f"[stop] shutdown post failed: {e}")
+            if not posted:
+                return False
+            if threading.current_thread() is not thread:
+                thread.join(timeout)
+                if thread.is_alive():
+                    _tray_log("[stop] tray thread did not exit before timeout")
+                    return False
+            elif thread.is_alive():
+                return False
         self.available = False
+        return True
 
     # -- icon -------------------------------------------------------------
     def _add_icon(self):
@@ -601,9 +697,11 @@ class TrayIcon:
         _tray_log(f"[_add_icon] Shell_NotifyIconW(NIM_ADD) -> {res}")
         if not res:
             _tray_log(f"[_add_icon] FAILED: {self._last_err()}")
+            return False
         # opt into the modern (Vista+) balloon behavior
         nid.uVersion = 4
         shell32.Shell_NotifyIconW(NIM_SETVERSION, ctypes.byref(nid))
+        return True
 
     def _remove_icon(self):
         nid = NOTIFYICONDATA()
@@ -637,6 +735,68 @@ class TrayIcon:
         nid.szInfoTitle = (title or "")[:63]
         nid.dwInfoFlags = info_flags | NIIF_NOSOUND
         shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid))
+
+    # -- parked work icons (one tray icon per hidden work) ------------------
+    def add_work_icon(self, uid, tip, color=(63, 185, 80)):
+        """Add a secondary tray icon (parked hidden work). Returns HICON or None."""
+        hicon = None
+        registered = False
+        succeeded = False
+        try:
+            hicon = make_square_icon(color)
+            if not hicon:
+                return None
+            nid = NOTIFYICONDATA()
+            nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
+            nid.hWnd = self.hwnd
+            nid.uID = uid
+            nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+            nid.uCallbackMessage = self.msg
+            nid.hIcon = hicon
+            nid.szTip = (tip or "work")[:127]
+            ok = shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+            _tray_log(f"[add_work_icon] uid={uid} NIM_ADD -> {ok}")
+            if not ok:
+                return None
+            registered = True
+            # v4 behavior so clicks arrive with the icon id in HIWORD
+            nid.uVersion = 4
+            if not shell32.Shell_NotifyIconW(
+                    NIM_SETVERSION, ctypes.byref(nid)):
+                _tray_log(f"[add_work_icon] uid={uid} NIM_SETVERSION failed")
+                return None
+            succeeded = True
+            return hicon
+        except Exception as e:
+            _tray_log(f"[add_work_icon] EXCEPTION: {e}")
+            return None
+        finally:
+            if hicon and not succeeded:
+                if registered:
+                    try:
+                        shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+                    except Exception:
+                        pass
+                try:
+                    user32.DestroyIcon(hicon)
+                except Exception:
+                    pass
+
+    def del_work_icon(self, uid, hicon=None):
+        """Remove a parked work icon; destroys its icon handle too."""
+        try:
+            nid = NOTIFYICONDATA()
+            nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
+            nid.hWnd = self.hwnd
+            nid.uID = uid
+            shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+        except Exception:
+            pass
+        if hicon:
+            try:
+                user32.DestroyIcon(hicon)
+            except Exception:
+                pass
 
     # -- console show/hide ------------------------------------------------
     def _resolve_console(self):
