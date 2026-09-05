@@ -88,16 +88,29 @@ class Tests(unittest.TestCase):
         with mock.patch.object(wc_tray.shell32, 'Shell_NotifyIconW', return_value=0):
             self.assertFalse(tray._add_icon())
 
-    def test_secondary_icon_setversion_failure_cleans_up(self):
+    def test_secondary_icon_setversion_failure_uses_legacy_callbacks(self):
         tray = wc_tray.TrayIcon()
         tray.hwnd = 1
-        notify = mock.Mock(side_effect=[1, 0, 1])
+        notify = mock.Mock(side_effect=[1, 0])
         with mock.patch.object(wc_tray, 'make_square_icon', return_value=55), mock.patch.object(wc_tray.shell32, 'Shell_NotifyIconW', notify), mock.patch.object(wc_tray.user32, 'DestroyIcon') as destroy:
-            self.assertIsNone(tray.add_work_icon(100, 'Demo'))
+            self.assertEqual(tray.add_work_icon(100, 'Demo'), 55)
         self.assertEqual([call.args[0] for call in notify.call_args_list],
-                         [wc_tray.NIM_ADD, wc_tray.NIM_SETVERSION,
-                          wc_tray.NIM_DELETE])
-        destroy.assert_called_once_with(55)
+                         [wc_tray.NIM_ADD, wc_tray.NIM_SETVERSION])
+        destroy.assert_not_called()
+
+    def test_legacy_callback_routes_icon_id_from_wparam(self):
+        tray = wc_tray.TrayIcon()
+        tray.on_tray_event = mock.Mock()
+        old = wc_tray._INSTANCE
+        try:
+            wc_tray._INSTANCE = tray
+            wc_tray._wndproc(1, tray.msg, 100, wc_tray.WM_LBUTTONUP)
+        finally:
+            wc_tray._INSTANCE = old
+        tray.on_tray_event.assert_called_once_with(
+            100, wc_tray.WM_LBUTTONUP)
+
+
     def test_partial_restore_keeps_parked_icon(self):
         import wctray
         tray = wctray.WorkTray()

@@ -433,11 +433,12 @@ def _wndproc(hwnd, msg, wparam, lparam):
     if inst is None:
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
     if msg == inst.msg:
-        # With NOTIFYICON_VERSION_4 (set in _add_icon) the shell packs the
-        # icon ID into the HIWORD of lParam -- compare the LOWORD event
-        # only, or every click is silently swallowed.
+        # Version 4 packs the icon id into HIWORD(lParam); legacy callbacks
+        # put it in wParam. Explorer may reject NIM_SETVERSION for a
+        # secondary icon, so accept both layouts.
         ev = int(lparam) & 0xFFFF
-        uid = (int(lparam) >> 16) & 0xFFFF
+        packed_uid = (int(lparam) >> 16) & 0xFFFF
+        uid = packed_uid or (int(wparam) & 0xFFFF)
         # Per-icon routing (parked work icons share this window): an
         # instance-level hook gets first refusal with (uid, event).
         handler = getattr(inst, "on_tray_event", None)
@@ -759,12 +760,15 @@ class TrayIcon:
             if not ok:
                 return None
             registered = True
-            # v4 behavior so clicks arrive with the icon id in HIWORD
+            # Prefer v4 callbacks, but keep the successfully added icon when
+            # Explorer rejects NIM_SETVERSION. _wndproc supports the legacy
+            # wParam icon-id layout too.
             nid.uVersion = 4
             if not shell32.Shell_NotifyIconW(
                     NIM_SETVERSION, ctypes.byref(nid)):
-                _tray_log(f"[add_work_icon] uid={uid} NIM_SETVERSION failed")
-                return None
+                _tray_log(
+                    f"[add_work_icon] uid={uid} NIM_SETVERSION failed; "
+                    "using legacy callbacks")
             succeeded = True
             return hicon
         except Exception as e:
