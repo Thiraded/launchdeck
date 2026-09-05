@@ -1,0 +1,423 @@
+# AGENTS.md — Work Combo (wc) launcher suite
+
+> Windows desktop launcher for the user's dev "works". Plain Python TUIs
+> (no external deps) driven by `works.json`. This file documents the
+> project AND the current rework task. Read it before touching `wc*.py`.
+
+---
+
+## 1. What this project is
+
+A single-screen launcher that starts/stops the user's development servers and
+apps. Each "work" is a Windows `.bat` that opens its OWN visible console
+window.
+
+**Current shape (post-rework): ONE TUI does both jobs:**
+
+- **wc** (work combo) — the ONLY tool. SELECT works (Space → `[X]`) and
+  `Enter` either **KILLS** a running work (`[-]`) or **LAUNCHES** a not-running
+  one. Lists live running state with a `[-]` marker.
+
+`kc` (the old separate kill tool) is **being deleted** — its role is merged
+into `wc`. See §4.3.
+
+The user's standing demands (architectural constraints — do not regress):
+- **Inline-tree UI**, one column with `SPACE` indentation for group members.
+  NOT a two-pane layout.
+- Works launch via `.bat` that open **VISIBLE** windows (never hidden/backgrounded).
+- Running-state is detected **live** from process CommandLine via
+  `Get-CimInstance Win32_Process`, matching the `.bat` basename (or an explicit
+  `match` token). MUST exclude `powershell*` processes and the launcher's own
+  PID. `WINDOWTITLE` is unreliable — do not use it.
+- `works.json` groups list their members by `id`; a member must NOT also appear
+  as a standalone top-level work (no duplication).
+- GPT is split into **`GPT Web start`** (tunnel client) and **`GPT MCP start`**
+  (MCP Inspector), uppercase labels.
+- `wc` is the entry point users launch (via `wc.bat` / `wc.lnk`).
+
+---
+
+## 2. File layout
+
+| File | Role |
+|------|------|
+| `works.json` | Manifest: `groups[]` (id/label/members) + `works[]` (id/label/bat/match/detect). |
+| `wc_core.py` | Pure logic shared by the TUI: manifest load, detection, run/kill, registry, model, state machine. NO UI. |
+| `wc.py` | The ONE TUI: SELECT (Space → `[X]`) + `Enter` KILLS running `[-]` / LAUNCHES not-running. Live `[-]` via background thread. |
+| `test_wc_core.py` | Headless integration test (fake workers, live detection, kill, state machine). |
+| `wc.bat` / `wc.lnk` | Launcher for `wc.py` (hermes venv python). Opens a real visible window. |
+| `registry.json` | Runtime: written by wc when a work launches; read to list running. |
+| `wc.settings.txt` | Selection preset (lowercased work ids), loaded on start / saved on quit. |
+| `kc.py` / `kc.bat` / `kc.lnk` | **DELETED** — kill role merged into `wc.py`. Do not resurrect. |
+
+---
+
+## 3. Current architecture
+
+### State tokens (selection column) — `wc_core.py`
+```
+OFF         " "   [ ]  not selected
+ON          "x"   [X]  selected to act on (Space toggles)
+RUN         "-"   [-]  detected as actually running (live, INFO only)
+```
+`[-]` is info only — you cannot "cancel" it by keypress; to stop a running
+work you select it `[X]` and press Enter (which kills it).
+
+### Detection (`scan_commandlines` + `is_running`)
+A SINGLE PowerShell call to `Get-CimInstance Win32_Process` returns ALL
+command lines once; `is_running`/`live_running`/`registry_running`/`poll_launch`
+reuse that list and match tokens in pure Python (no per-work rescan). This is
+~9x faster than the old per-work loop and does NOT block the key loop.
+Excludes `powershell*` and self PID. `WINDOWTITLE` is not used.
+
+### Launch (`launch_work`)
+`cmd.exe /c start "" <bat>` → spawns a new **visible** console window.
+(`start` must have exactly one `""` title placeholder — a stray second `""`
+made it open Explorer instead. Do not regress.)
+`wc` no longer auto-closes after launch (it is a persistent manager now, not a
+transient launcher).
+
+### Kill (`kill_work`)
+PowerShell `Invoke-CimMethod -MethodName Terminate` on every process whose
+CommandLine matches the work's tokens (covers the console `cmd` AND child
+`node.exe` from `npm run dev`). Then `unregister(work)`.
+
+### Model / groups
+A group has NO state of its own: `group selected <=> any child selected` (pure
+OR). Space on a group toggles ALL children; clearing any child clears the group.
+`build_model` skips works that are members of a group (no duplicate standalone).
+
+### wc.py behavior today
+Inline tree, cursor nav (Up/Down), `Space`/`t` toggles select `[ ]`↔`[X]`,
+`Enter` acts on every `[X]` node — KILL if running (`[-]`) else LAUNCH.
+`Esc`/`q` quit. Saves preset to `wc.settings.txt` on exit.
+Live `[-]` refreshed by a background thread (never blocks keys).
+
+### Key capture (IMPORTANT — see §4 bug)
+`get_key()` reads the console INPUT buffer directly via `ReadConsoleInput`
+(ctypes), NOT `msvcrt.getch()`. QuickEdit/Mouse console modes are disabled on
+startup so a mouse click inside the window does not freeze keyboard input.
+
+---
+
+## 4. TASK — merge kill into wc, delete kc
+
+**Why:** Keeping kill in a separate `kc` tool meant the user had to juggle two
+windows and `kc` "couldn't be used". Decision: collapse everything into `wc`.
+
+### 4.1 wc.py — SELECT + KILL + LAUNCH (done)
+- Space toggles `[ ]`↔`[X]` (select what to act on).
+- Enter on a `[X]` node: if running (`[-]`) → KILL; else → LAUNCH.
+- Live `[-]` marker via background thread.
+- Key capture via `ReadConsoleInput` + QuickEdit disabled.
+
+### 4.2 kc — DELETED
+`kc.py`, `kc.bat`, `kc.lnk` removed (commit `f4aa58f`). Kill lives in `wc` now.
+Do not bring kc back.
+
+### 4.3 OPEN BUG — wc select+kill does NOT work in the real window yet
+Status: **NOT FIXED / UNVERIFIED.**
+- The state machine is proven correct via headless simulation (Space → `[X]`,
+  Enter → kill/launch, Esc → quit all work).
+- BUT on the user's actual machine, pressing `Space` in the `wc.bat` window
+  does NOT toggle `[ ]`→`[X]` — i.e. key capture fails in the live window.
+- Attempted fix: switched `get_key()` to `ReadConsoleInput` (ctypes) and
+  disabled QuickEdit (commit `d04d0c6`). This is UNVERIFIED — the user must
+  re-test `wc.bat`. If it still fails, the window is likely not receiving
+  console input (focus / spawn issue) and we must fall back to a different
+  input path (e.g. non-blocking `kbhit`/`getch` loop, or reading from a pipe).
+- **Do NOT claim DONE until the user confirms Space-select + Enter-kill works
+  in the real `wc.bat` window.**
+
+### 4.4 wc_tray.py — system tray (added 2026-08-30)
+**Goal:** hide the wc console to a system-tray icon; pop a balloon when a
+launched work is detected live. Press `h` in wc → tray, left-click toggles
+window, right-click menu Show/Hide/Quit. X still really quits.
+
+**Critical ctypes traps found in the field (do not regress):**
+1. `kernel32.GetModuleHandleW(None)` MUST have its prototype set
+   (`argtypes=[c_wchar_p]`, `restype=c_void_p`). Default 32-bit `int`
+   return truncates the 64-bit handle on x64 Python → `CreateWindowExW`
+   silently returns NULL → tray "not available" with no error.
+2. The tray window CANNOT be `HWND_MESSAGE`. `TrackPopupMenu` requires a
+   real top-level window that can be `SetForegroundWindow`-ed; on a
+   message-only window, the menu pops but clicks vanish. Use
+   `WS_POPUP` + `hWndParent=None`.
+3. Popup-menu items deliver via `WM_COMMAND` with the command id in
+   `wParam` low word. `WndProc` MUST handle `WM_COMMAND` or "Show /
+   Hide / Quit" are dead.
+4. For "Quit" from the tray, don't `os._exit(0)` blindly — wc's main
+   loop is blocked in `get_key`. Write a synthetic Esc to the console
+   input buffer (`WriteConsoleInputW` + `KEY_EVENT`) so the loop unwinds
+   cleanly and the preset saves. Fall back to `_exit` only if that fails.
+5. Diagnostic log lives at `wc_logs/tray.log`; each step of `_run` and
+   `GetLastError` codes are recorded so future failures are visible.
+
+**Tricky truth:** `wc_tray.hide_console` only hides the **wc** console
+(`GetConsoleWindow()` of the wc process). It does NOT hide the .bat
+windows each work opened (per AGENTS.md rule: works stay visible). So
+pressing `h` cleans up the wc TUI; the work windows stay on screen —
+that's the intended split.
+
+### 4.5 kill_work — process tree (added 2026-08-30, after 2 stale-kill bugs)
+**Original problem:** `kill_work` matched CommandLine tokens and Terminated
+those PIDs only. For works like `gpt-mcp` whose bat spawned a nested
+`start "X" cmd /k npx ...`, the cmd host window did not contain the
+match token, so the npx child died but the cmd window stayed open as
+a zombie. Reported by user: "kill says Killed but terminal stays alive".
+
+**Fix:** Walk the process tree in PowerShell, both directions:
+1. seed = any PID whose CommandLine contains a match token
+2. walk descendants of seeded PIDs (BFS via `$children` map)
+3. walk ancestors of seeded PIDs up to (but not past) `$me` (the
+   PowerShell's own PID) and never into `powershell*`
+4. For each *top-of-tree* cmd.exe in the kill set, `Terminate` it (this
+   is the user's visible window -- Terminate the cmd host directly, not
+   just its child npx). The conhost attached to the cmd is reparented
+   to `wininit` when the cmd dies, so it closes too.
+5. Belt-and-braces: re-query the top cmd.exe PIDs and `taskkill /F /T`
+   each. `/T` kills the whole tree (cmd + npx + conhost) in one shot;
+   this is what reliably closes the visible window.
+
+**Critical PowerShell traps hit while writing this (do not regress):**
+1. `-Command` on the command line CANNOT host multi-line `while`,
+   `foreach`, etc. — it parses as one statement. The fix is to write
+   the script to a temp .ps1 and use `-File`. Trying to be clever with
+   `& { ... }` still fails because the top-level parser tokenizes each
+   `;`-separated fragment as a complete statement.
+2. **`$PID` is read-only.** Using `$pid` (any case) as a `foreach` loop
+   variable raises `Cannot overwrite variable PID because it is
+   read-only or constant` — and because we wrapped the body in
+   `SilentlyContinue` + `-File`, the error was SWALLOWED silently. The
+   `foreach ($pid in $kill)` block never executed. Use `$kpid` or any
+   other name.
+3. `Get-CimInstance Win32_Process` is the right API (not `Get-Process`).
+   `Get-Process` doesn't expose CommandLine; you only get truncation.
+
+### 4.6 h key — hide the cursor's WORK terminal (added 2026-08-30)
+**Original problem (re-think):** `h` was hiding the **wc** console to
+the system tray. User then asked for the tray icon removed and to hide
+the work terminal instead, because hunting for the work window behind
+several open terminals is the actual pain point.
+
+**New behavior:**
+- `h` on a work line that is `[-]` (running) -> find the HWNDs of that
+  work's process tree and `ShowWindowAsync(SW_HIDE)` them all.
+- `h` again on the same work (or any work) -> restore with
+  `ShowWindowAsync(SW_RESTORE)`. Hidden state is tracked per work in
+  `_hidden_hwnds: dict[key -> list[hwnd]]`.
+- `h` on a `not-running` work line -> status message "not running,
+  nothing to hide" (no-op).
+- The wc console is NEVER touched. No tray, no minimize, no nothing.
+
+**How we find the HWNDs (`find_work_hwnds` in wc_core.py):**
+1. PowerShell: enumerate `Get-CimInstance Win32_Process`, collect
+   PIDs whose CommandLine contains a work match token. Returns the
+   PIDs as plaintext.
+2. PowerShell: walk each PID up to its top-of-tree ancestor (skipping
+   self, powershell*) so we also pick up the `cmd /c start ""` host.
+3. ctypes `EnumWindows` over all top-level windows; keep HWNDs whose
+   `GetWindowThreadProcessId` PID is in the set AND
+   `IsWindowVisible(hwnd)`.
+
+`wc_tray.py` is no longer imported. The file is left on disk for
+reference but is dead code -- do not bring it back unless we need a
+tray again.
+
+### 4.7 kill_work — DOWN ONLY + dry_run (rewritten 2026-09-05 after incident)
+**Incident:** the §4.5 ancestor walk + `kill_tokens_for` (which added the
+bare work id, e.g. 1-char `"a"`, as a kill token) matched nearly every
+process on the machine and taskkilled `cmd.exe` ancestors across the
+system -- taking down the agent's own session shell AND the user's
+Discord, VSCode, and work windows.
+
+**New rules (do not regress):**
+1. `kill_work` walks DOWN ONLY (seeds + BFS over the children map).
+   NEVER walk up to ancestors for killing.
+2. PROTECTED set = scanner powershell PID + launcher python PID + every
+   ancestor of the launcher up to the root. Never in the kill list, even
+   on token match. `powershell*` is never killed (hosts user sessions).
+3. Token hygiene: `kill_tokens_for` adds the bare work id only if
+   `len >= 4`; `kill_work` drops any token shorter than 3 chars. Killing
+   is destructive -- a 1-2 char token matches the whole machine and can
+   never be intended. (Detection via `titles_for`/`is_running` is
+   unaffected.)
+4. `kill_work(work, dry_run=True)` returns the sorted kill PID list
+   WITHOUT killing. Per §6, show this list and get approval BEFORE any
+   real kill when in doubt.
+
+### 4.8 Launcher .bat canonical shape — single window, INLINE (unified 2026-09-05)
+All work launchers follow the Hamster-Clint template: ONE console window,
+real command runs INLINE via `cmd /k` -- NEVER a nested
+`start "X" cmd /k` (that shape opened 2 windows and split kill/hide token
+coverage: the Clint-vs-Server split from the PARK-IN-^ trial).
+Template (dev-server works): `setlocal` + APPDIR guards via
+`if not exist ... goto :label` (never `(...)` blocks -- parens in echo
+text break the parser) -> `cd /d` -> `cls` -> `cmd /k "<real command>"`
+-> `exit /b 0`; error labels end with `pause` + `exit /b 1`.
+GUI launchers (Unity Hub / VSCode / Web .lnk): same guards, `start ""`
+the exe/lnk (opens NO console), then `pause` so the window stays for
+inspection. `HamsterWorld Redis.bat` is EXEMPT (interactive Docker panel,
+not a launcher). Reshape does NOT change `match` tokens (they target the
+real backend proc) and the kill basename fallback now covers the single
+window directly.
+Every launcher also sets `title <works.json label>` (exact) as an early
+action: conhost keeps it for the window's life, so windows are ALSO
+findable by exact title (find_work_hwnds step 4) when PID-ownership mapping
+misses. Title is window-lookup ONLY -- never a kill seed. Shared-host
+guard: title hits owned by windowsterminal/explorer/powershell or our own
+PID are ignored (closing a shared WT window would take the user's other
+tabs). If WT ever becomes the default terminal, revisit -- per-tab close
+needs a WT-specific API.
+
+### 4.9 Kill = exit the window, not just stop the task (2026-09-05)
+`run_work` opens exactly ONE window per work (`start "" bat` + §4.8 inline
+bat), and `kill_work` removes it in THREE passes over the SAME downward-only
+kill set (§4.7 rules unchanged): pass 1 = graceful `taskkill /PID` (no /F);
+pass 2 = Alt+F4 via close_work_windows (WM_CLOSE to every HWND in the
+guarded owner set -- needed because a leftover `cmd /k` host can be an
+ANCESTOR of every seed, unreachable by DOWN kill; closing its window
+terminates it via the console); pass 3 after a bounded 2.5s wait =
+per-PID `taskkill /F` sweep for stragglers (already-gone PIDs just report
+"not found", ignored).
+No /T ever (shared-conhost cascade). wc.py + wctray.py both funnel through
+`launch_work`/`kill_work`, so this covers every Start/Stop/Restart path.
+
+### 4.10 gowc.exe — Go scan/kill accelerator (added 2026-09-05, spike 002)
+Pure-stdlib Go (`gowc/`, no deps, no network to build), `gowc.exe` sits next
+to `wc_core.py`. Python uses it when present, else IDENTICAL powershell
+fallbacks -- never a hard dependency, `(no external deps)` still holds.
+`scan` (PEB command lines, 16-worker fan-out) feeds ONE shared `scan_table()`
+(pid,ppid,name,cmd) that kill seeds/BFS, find steps 1-2, hwnd maps and title
+guard all read -- the old code spawned a powershell per consumer (find alone
+did 3). Measured live (~275 procs): table 0.85s->0.07s, dry_run 0.83s->0.06s,
+find 2.67s->0.07s. `kill <pid>..` (in-process TerminateProcess) drives pass-3
+sweep; pass 1 stays taskkill-no-/F (graceful console-close has no Go
+equivalent; GenerateConsoleCtrlEvent/CTRL_C only breaks to prompt anyway).
+Validated 0 content mismatches vs Get-CimInstance (incl. Brave tab-URL PID).
+Rebuild: `cd gowc && go build -o ../gowc.exe .` Commit the exe (2.5MB) so it
+works without the toolchain.
+
+---
+
+## 7. Tray UX overhaul backlog (user feedback 2026-09-05, wctray live)
+
+Do these ONE AT A TIME, in order. Status tracked here.
+
+- [x] **1. Hide is broken** — FIXED 2026-09-05, gate ALL PASS on
+      hamster-server (launch → hwnds found → hide 1 window, task alive
+      → visible 0 → show restored → stopped).
+      Root cause: owner-set design was inverted -- matchable seeds
+      (node) sit BELOW the window-owning cmd, conhost is its CHILD.
+      `_hwnds_for_pids` now = seeds + bounded ancestors (8, stops at
+      own protected chain) + 1 level of children (conhost/wrappers);
+      powershell traversed-never-added. Kill stays DOWNWARD-ONLY.
+      Side finds: (a) token `omniroute` seeded Brave PID 4524 via tab
+      URL -- NEVER-seed GUI list (browsers/chat/explorer/shell) added
+      to kill_work + hide seeds; (b) omniroute `hwnds=0` earlier was
+      the same bug (its `cmd /k` window IS visible), not headless.
+      FOLLOW-UP 2026-09-05: (c) respawn sweep -- monitor re-hides new
+      windows of hidden-marked works every cycle (`sweep_hidden_windows`;
+      kill clears hidden tracking); (d) dashboard no-flicker -- rebuild
+      only when running/hidden/manifest signature changes; (e) ALL row
+      actions async (worker thread + after()-back -- scans blocked the
+      tk mainloop = the "UI hangs" bug); (f) Restart button per row
+      (kill+launch fresh -- the way out of headless-orphan state).
+- [ ] **2. Kill the .bat files: inline commands + variables** — New Task
+      today requires picking a `.bat` file; user wants to type commands
+      directly instead. Design: work entry gains `steps: ["cd ...",
+      "npm run dev --... %port%"]` + `vars: {port: "3000"}` with
+      `%VAR%` expansion at launch, run through a Terminal step type
+      (vs App step type for exe/lnk). Scope: implement + TEST on
+      **hamster combo first**, then migrate the rest, then DELETE the
+      Desktop `.bat` launchers. (Detection `match` tokens stay
+      CommandLine-based.)
+- [ ] **3. New Group** — dashboard can create a group (label + pick
+      member works), rename/delete it. Persisted in works.json.
+- [ ] **4. Dashboard scroll** — content is cut at Midnight-Rider combo
+      (2nd work unreachable). The canvas+scrollbar exists but mouse-wheel
+      doesn't scroll (and region/width may be off). Fix: wheel binding
+      (`<MouseWheel>` → yview_scroll) + verify all 8 works reachable.
+- [ ] **5. Real popup behavior** — the dashboard is a draggable
+      always-on-top window ("fake window": doesn't dismiss, floats over
+      everything). Wanted: tray-flyout behavior -- auto-dismiss on
+      focus loss (click elsewhere closes it), keep position pinned near
+      tray. Careful: editor Toplevels/dialogs must not trigger dismiss.
+
+### PARK-IN-^ TRIAL (B, 2026-09-05 evening) — user verdict: STILL BROKEN
+Implemented + headless-verified: per-work tray icon on Hide (green,
+tooltip "🟢 label (hidden) — click to restore" + balloon), click routes
+by icon-id HIWORD to unpark+restore, icons auto-removed on
+Show/Stop/kill/delete/quit, synthetic-click e2e PASS (queue got the
+unpark action), click-mask v4 fix, guard/election/takeover safety net.
+Live log: 3 parks of **Hamster-Clint** uid=100/101/102 (NIM_ADD=1 all).
+Clint .bat shape DIFFERS from Server: runs `cmd /k npm…` INLINE in the
+launcher console (no `start`) -- single shared console window.
+Hypotheses for the failure (ranked): (1) dead-icon clicks are a silent
+no-op (old uids 100/101 if delete lagged); (2) restore lands BEHIND
+other windows (SW_SHOW + best-effort foreground); (3) Clint single-
+console shape vs hide/show/kill token coverage; (4) sweep-vs-restore
+race (unlikely -- show pops tracking first). NEEDED FROM USER: how many
+green icons in ^ right now? click one -- any balloon/status message?
+window visible anywhere after?
+
+## 8. Verification (how to prove DONE)
+- `python test_wc_core.py` passes (model build, detection, group OR, kill-via-group,
+  Space OFF→ON → Enter acts). — **PASSING.**
+- Headless key-sequence simulation confirms the state machine: Space → `[X]`,
+  Enter → kill/launch, Esc → quit. — **PASSING.**
+- **OUTSTANDING:** Manual smoke on Windows — open `wc.bat`, press `Space` on a
+  work, confirm `[ ]`→`[X]`, press `Enter`, confirm a running `[-]` work is
+  KILLED (and a not-running one is launched). This is the gate for DONE and is
+  currently failing / unverified.
+- Confirm killing covers both the `cmd` host and child `node.exe` (npm dev).
+- Confirm wc never hangs the host: `scan_commandlines` is a single scan, the
+  live `[-]` monitor is a background thread with a 2s sleep (finite), no
+  unbounded `while True` in the key path.
+
+---
+
+## 6. Hermes self-discipline — machine-side-effect rule (added 2026-08-30)
+
+**Two prior incidents on the same day, both because I ran broad commands
+on a live user machine without checking what would be affected:**
+
+1. **Infinite terminal spawn** — wc launch / kill debugging loop
+   launched a runaway chain of windows the user had to manually close.
+2. **Killed the user's live windows** — while cleaning up GPT MCP test
+   leftovers, I ran `Get-CimInstance Win32_Process | Where-Object {
+   $_.CommandLine -like '*GPT MCP*' -or $_.CommandLine -like
+   '*modelcontextprotocol*' } | ForEach-Object { ...Terminate }`.
+   The user's own Discord, browser, and other open processes were
+   also matched by the loose pattern and killed.
+
+**Rule for any future session on this machine (and any user machine):**
+
+Before running ANY command that touches the user's live machine, answer
+THESE THREE QUESTIONS in writing in the response BEFORE executing:
+
+1. **What exact PIDs / names / paths will this affect?**
+   Write them out. A `Where-Object {$_.Name -like 'cmd*'}` is too broad.
+2. **Could any of those be the user's own open app?**
+   Discord, VS Code, browser, dev servers, terminals, the IDE, the
+   agent's own session — those are NOT test artifacts.
+3. **Am I sure this affects only the test target and nothing else?**
+   If the answer is "I don't know", STOP. Narrow the query (exact
+   PID, exact path, exact exe name) or ASK the user.
+
+**Default behavior:**
+
+- Narrow + exact (specific PID, specific path) over broad pattern
+- Show the target list to the user BEFORE killing, when in doubt
+- Never run a sweeping `Get-CimInstance | Where {...broad...} |
+  Terminate` on a live user machine
+- Test artifacts (fake workers, leftover cmds from previous tests) are
+  fine to clean up — but verify each one is actually a test artifact
+  (its parent / creation time / CommandLine signature) before Terminate
+- The user's open windows and dev sessions outrank my convenience. If a
+  cleanup step feels risky, skip it and ask.
+
+**Applies to:** taskkill, `Get-CimInstance | Invoke-CimMethod Terminate`,
+`Stop-Process`, `sc stop`, `net stop`, `reg delete`, `Remove-Item` (broad
+globs), `Format-Volume`, anything that mutates user-visible state on
+the host machine.

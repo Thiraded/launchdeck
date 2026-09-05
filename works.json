@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "hamstercombo",
+      "label": "Hamster combo",
+      "members": ["hamster-server", "hamster-clint", "hamsterquest"]
+    },
+    {
+      "id": "midnightcombo",
+      "label": "Midnight-Rider combo",
+      "members": ["mr-unity", "mr-vscode"]
+    },
+    {
+      "id": "omniroutecombo",
+      "label": "OmniRoute combo",
+      "members": ["omniroute-cli", "omniroute-web"]
+    }
+  ],
+  "works": [
+    {
+      "id": "hamster-server",
+      "label": "Hamster-Server start",
+      "bat": "D:\\workcombo\\Hamster-Server start.bat",
+      "match": "D:\\projects\\HamsterWorld\\server",
+      "detect": true
+    },
+    {
+      "id": "hamster-clint",
+      "label": "Hamster-Clint start",
+      "bat": "D:\\workcombo\\Hamster-Clint start.bat",
+      "match": "D:\\projects\\HamsterWorld\\backoffice",
+      "detect": true
+    },
+    {
+      "id": "hamsterquest",
+      "label": "Hamsterquest start",
+      "bat": "D:\\workcombo\\Hamsterquest start.bat",
+      "match": "D:\\projects\\Hamsquest",
+      "detect": true
+    },
+    {
+      "id": "mr-unity",
+      "label": "Midnight-Rider Unity start",
+      "bat": "D:\\workcombo\\Midnight-Rider Unity start.bat",
+      "match": "Unity Hub.exe",
+      "detect": true
+    },
+    {
+      "id": "mr-vscode",
+      "label": "Midnight-Rider VSCode start",
+      "bat": "D:\\workcombo\\Midnight-Rider VSCode start.bat",
+      "match": "Code.exe",
+      "detect": true
+    },
+    {
+      "id": "omniroute-cli",
+      "label": "OmniRoute CLI start",
+      "bat": "D:\\workcombo\\OmniRoute CLI start.bat",
+      "match": "omniroute",
+      "log": "%LOCALAPPDATA%\\bg-launcher-logs\\bg-omniroute-cli.log",
+      "detect": true
+    },
+    {
+      "id": "omniroute-web",
+      "label": "OmniRoute Web start",
+      "bat": "D:\\workcombo\\OmniRoute Web start.bat",
+      "match": "OmniRoute AI Gateway.lnk",
+      "detect": true
+    },
+    {
+      "id": "gpt-mcp",
+      "label": "GPT MCP start",
+      "bat": "D:\\workcombo\\GPT MCP.bat",
+      "match": "modelcontextprotocol/inspector",
+      "detect": true
+    }
+  ]
+}

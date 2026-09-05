@@ -1,0 +1,42 @@
+{
+  "omniroute-cli": {
+    "label": "OmniRoute CLI start",
+    "bat": "D:\\workcombo\\OmniRoute CLI start.bat",
+    "launched": "2026-09-02 19:48:45"
+  },
+  "omniroute-web": {
+    "label": "OmniRoute Web start",
+    "bat": "D:\\workcombo\\OmniRoute Web start.bat",
+    "launched": "2026-08-30 12:56:59"
+  },
+  "hamsterquest": {
+    "label": "Hamsterquest start",
+    "bat": "D:\\workcombo\\Hamsterquest start.bat",
+    "launched": "2026-08-31 20:57:40"
+  },
+  "mr-unity": {
+    "label": "Midnight-Rider Unity start",
+    "bat": "D:\\workcombo\\Midnight-Rider Unity start.bat",
+    "launched": "2026-09-05 13:00:17"
+  },
+  "mr-vscode": {
+    "label": "Midnight-Rider VSCode start",
+    "bat": "D:\\workcombo\\Midnight-Rider VSCode start.bat",
+    "launched": "2026-09-05 17:59:08"
+  },
+  "gpt-mcp": {
+    "label": "GPT MCP start",
+    "bat": "D:\\workcombo\\GPT MCP.bat",
+    "launched": "2026-09-05 18:03:32"
+  },
+  "hamster-server": {
+    "label": "Hamster-Server start",
+    "bat": "D:\\workcombo\\Hamster-Server start.bat",
+    "launched": "2026-09-05 21:21:16"
+  },
+  "hamster-clint": {
+    "label": "Hamster-Clint start",
+    "bat": "D:\\workcombo\\Hamster-Clint start.bat",
+    "launched": "2026-09-05 22:10:08"
+  }
+}

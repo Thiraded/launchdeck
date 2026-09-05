@@ -1,0 +1,459 @@
+16:27:27 wctray starting
+16:31:45 wctray starting
+16:31:51 wctray starting
+16:32:11 wctray starting
+16:35:35 wctray starting
+16:39:09 wctray starting
+16:42:49 wctray starting
+16:45:58 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00004408 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00004f8c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 624 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 680 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004408 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00004f8c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 624 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 680 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004408 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 497 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00004f8c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 624 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 680 in <module>
+16:45:59 wctray ready (tray + dashboard up)
+16:49:24 wctray starting
+16:49:25 [twin-check] parent pythonw.exe runs our script -- exiting as spawned twin
+16:51:28 wctray starting
+16:51:29 [twin-check] parent pythonw.exe runs our script -- exiting as spawned twin
+16:58:32 wctray starting
+16:58:38 wctray starting
+16:59:06 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00002254 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003934 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 686 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 742 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00002254 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003934 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 686 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 742 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00002254 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 497 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003934 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 686 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 742 in <module>
+16:59:08 wctray ready (tray + dashboard up)
+16:59:52 wctray starting
+17:00:23 [guard] port still held after wait -- exiting quietly
+17:02:43 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00004518 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006274 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 701 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 757 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004518 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006274 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 701 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 757 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004518 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 497 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006274 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 701 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 757 in <module>
+17:02:46 wctray ready (tray + dashboard up)
+17:04:21 wctray starting
+17:11:32 wctray starting
+17:12:02 wctray starting
+17:12:03 [guard] port still held after wait -- exiting quietly
+17:12:32 [guard] port still held after wait -- exiting quietly
+17:14:07 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00003190 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00005230 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00003190 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 491 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00005230 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00003190 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 497 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00005230 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 472 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+17:14:09 wctray ready (tray + dashboard up)
+17:15:15 wctray starting
+17:15:46 [guard] port still held after wait -- exiting quietly
+17:17:06 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00003db8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 494 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000015cc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 475 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00003db8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 494 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000015cc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 475 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00003db8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 500 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000015cc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 475 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 671 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 728 in <module>
+17:17:08 wctray ready (tray + dashboard up)
+17:18:59 hid 1 window(s) — task still running
+17:22:27 wctray starting
+17:23:25 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00004568 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003944 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004568 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003944 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004568 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 543 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003944 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+17:23:26 wctray ready (tray + dashboard up)
+17:49:05 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x000010ec (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000087c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x000010ec (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000087c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x000010ec (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 543 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000087c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 735 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 792 in <module>
+17:49:07 wctray ready (tray + dashboard up)
+17:57:09 wctray starting
+17:59:06 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x000029b8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000032fc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x000029b8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000032fc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x000029b8 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 543 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000032fc (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+17:59:07 wctray ready (tray + dashboard up)
+18:16:14 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00006180 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000556c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00006180 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000556c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00006180 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 543 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000556c (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 761 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 818 in <module>
+18:16:16 wctray ready (tray + dashboard up)
+18:23:43 wctray starting
+18:24:13 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00000e68 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006304 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 789 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 846 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00000e68 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 537 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006304 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 789 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 846 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00000e68 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 543 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006304 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 518 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 789 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 846 in <module>
+18:24:14 wctray ready (tray + dashboard up)
+18:34:22 wctray starting
+18:35:26 wctray starting
+Windows fatal exception: access violation
+
+Current thread 0x00004484 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 547 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003148 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 528 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 928 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 987 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004484 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 547 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003148 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 528 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 928 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 987 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00004484 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 553 in _run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 982 in run
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\thira\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003148 (most recent call first):
+  File "C:\Users\thira\OneDrive\Desktop\wc_tray.py", line 528 in start
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 928 in main
+  File "C:\Users\thira\OneDrive\Desktop\wctray.py", line 987 in <module>
+18:35:28 wctray ready (tray + dashboard up)
+18:37:45 parked 'Hamster-Clint start' as tray icon uid=100
+18:38:02 parked 'Hamster-Clint start' as tray icon uid=101
+18:38:17 parked 'Hamster-Clint start' as tray icon uid=102
+20:39:49 parked 'Hamster-Server start' as tray icon uid=103
+20:39:54 sweep re-hid 1 window(s) for hamster-server
+20:40:00 sweep re-hid 1 window(s) for hamster-server
+21:22:03 wctray starting
+21:22:07 wctray starting
+21:22:19 wctray ready (tray + dashboard up)
+21:22:24 wctray ready (tray + dashboard up)
+21:23:36 wctray starting
+21:24:06 [guard] port still held after wait -- exiting quietly
+21:54:30 wctray starting
+21:54:33 wctray ready (tray + dashboard up)

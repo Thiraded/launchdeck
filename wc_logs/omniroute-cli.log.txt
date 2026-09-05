@@ -1,0 +1,10 @@
+
+====================================
+  OmniRoute - CLI (hidden output)
+====================================
+
+CLI runs in background; log: C:\Users\thira\AppData\Local\bg-launcher-logs\bg-omniroute-cli.log
+
+CLI started.
+Window left open for inspection.
+Press any key to continue . . . 
