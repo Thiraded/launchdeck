@@ -328,12 +328,48 @@ def make_square_icon(color=(0, 120, 215)):
         if not hbmp:
             raise ctypes.WinError()
         addr = ppv.value
+        # dark rounded-square + lightning bolt (drawn per-pixel, no assets)
+        bgr, bgg, bgb = (30, 33, 38)
+        RAD = 7
+
+        def inside(x, y):
+            if RAD <= x < W - RAD:
+                return True
+            if RAD <= y < H - RAD:
+                return True
+            cx = RAD if x < RAD else W - 1 - RAD
+            cy = RAD if y < RAD else H - 1 - RAD
+            return (x - cx) ** 2 + (y - cy) ** 2 <= RAD * RAD
+
+        bolt = [(19, 3), (9, 18), (14, 18), (12, 29), (23, 12), (17, 12)]
+
+        def in_poly(x, y, poly):
+            ins = False
+            j = len(poly) - 1
+            for i in range(len(poly)):
+                xi, yi = poly[i]
+                xj, yj = poly[j]
+                if ((yi > y) != (yj > y)) and (
+                        x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                    ins = not ins
+                j = i
+            return ins
+
         pixels = bytearray(W * H * 4)
-        for i in range(W * H):
-            pixels[i * 4 + 0] = b
-            pixels[i * 4 + 1] = g
-            pixels[i * 4 + 2] = r
-            pixels[i * 4 + 3] = 255
+        for yy in range(H):
+            for xx in range(W):
+                if not inside(xx, yy):
+                    continue  # transparent corner (mask bit below)
+                o = (yy * W + xx) * 4
+                if in_poly(xx, yy, bolt):
+                    pixels[o + 0] = b
+                    pixels[o + 1] = g
+                    pixels[o + 2] = r
+                else:
+                    pixels[o + 0] = bgb
+                    pixels[o + 1] = bgg
+                    pixels[o + 2] = bgr
+                pixels[o + 3] = 255
         ctypes.memmove(addr, bytes(pixels), len(pixels))
 
         # 1bpp mask (all zero => fully opaque)
@@ -350,7 +386,14 @@ def make_square_icon(color=(0, 120, 215)):
             NULL, ctypes.byref(mbmi), 0, ctypes.byref(pmask), None, 0)
         if not hmask:
             raise ctypes.WinError()
-        ctypes.memmove(pmask, b"\x00" * mask_size, mask_size)
+        # 1bpp mask: transparent outside the rounded rect, opaque inside
+        # (MSB-first bits, rows padded to 32 bits)
+        mask = bytearray(mask_size)
+        for y in range(H):
+            for x in range(W):
+                if not inside(x, y):
+                    mask[y * mask_row + x // 8] |= 1 << (7 - (x % 8))
+        ctypes.memmove(pmask, bytes(mask), mask_size)
 
         ii = ICONINFO()
         ii.fIcon = True
@@ -383,8 +426,11 @@ def _wndproc(hwnd, msg, wparam, lparam):
     if inst is None:
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
     if msg == inst.msg:
-        ev = lparam & 0xFFFFFFFF
-        if ev == WM_LBUTTONUP:
+        # With NOTIFYICON_VERSION_4 (set in _add_icon) the shell packs the
+        # icon ID into the HIWORD of lParam -- compare the LOWORD event
+        # only, or every click is silently swallowed.
+        ev = int(lparam) & 0xFFFF
+        if ev in (WM_LBUTTONUP, 0x0203):  # 0x0203 = WM_LBUTTONDBLCLK
             try:
                 inst.toggle_console()
             except Exception:
@@ -551,7 +597,10 @@ class TrayIcon:
         nid.uCallbackMessage = self.msg
         nid.hIcon = self.icon
         nid.szTip = self.tip
-        shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        res = shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        _tray_log(f"[_add_icon] Shell_NotifyIconW(NIM_ADD) -> {res}")
+        if not res:
+            _tray_log(f"[_add_icon] FAILED: {self._last_err()}")
         # opt into the modern (Vista+) balloon behavior
         nid.uVersion = 4
         shell32.Shell_NotifyIconW(NIM_SETVERSION, ctypes.byref(nid))

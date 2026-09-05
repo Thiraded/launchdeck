@@ -224,9 +224,75 @@ several open terminals is the actual pain point.
 reference but is dead code -- do not bring it back unless we need a
 tray again.
 
+### 4.7 kill_work — DOWN ONLY + dry_run (rewritten 2026-09-05 after incident)
+**Incident:** the §4.5 ancestor walk + `kill_tokens_for` (which added the
+bare work id, e.g. 1-char `"a"`, as a kill token) matched nearly every
+process on the machine and taskkilled `cmd.exe` ancestors across the
+system -- taking down the agent's own session shell AND the user's
+Discord, VSCode, and work windows.
+
+**New rules (do not regress):**
+1. `kill_work` walks DOWN ONLY (seeds + BFS over the children map).
+   NEVER walk up to ancestors for killing.
+2. PROTECTED set = scanner powershell PID + launcher python PID + every
+   ancestor of the launcher up to the root. Never in the kill list, even
+   on token match. `powershell*` is never killed (hosts user sessions).
+3. Token hygiene: `kill_tokens_for` adds the bare work id only if
+   `len >= 4`; `kill_work` drops any token shorter than 3 chars. Killing
+   is destructive -- a 1-2 char token matches the whole machine and can
+   never be intended. (Detection via `titles_for`/`is_running` is
+   unaffected.)
+4. `kill_work(work, dry_run=True)` returns the sorted kill PID list
+   WITHOUT killing. Per §6, show this list and get approval BEFORE any
+   real kill when in doubt.
+
 ---
 
-## 5. Verification (how to prove DONE)
+## 7. Tray UX overhaul backlog (user feedback 2026-09-05, wctray live)
+
+Do these ONE AT A TIME, in order. Status tracked here.
+
+- [x] **1. Hide is broken** — FIXED 2026-09-05, gate ALL PASS on
+      hamster-server (launch → hwnds found → hide 1 window, task alive
+      → visible 0 → show restored → stopped).
+      Root cause: owner-set design was inverted -- matchable seeds
+      (node) sit BELOW the window-owning cmd, conhost is its CHILD.
+      `_hwnds_for_pids` now = seeds + bounded ancestors (8, stops at
+      own protected chain) + 1 level of children (conhost/wrappers);
+      powershell traversed-never-added. Kill stays DOWNWARD-ONLY.
+      Side finds: (a) token `omniroute` seeded Brave PID 4524 via tab
+      URL -- NEVER-seed GUI list (browsers/chat/explorer/shell) added
+      to kill_work + hide seeds; (b) omniroute `hwnds=0` earlier was
+      the same bug (its `cmd /k` window IS visible), not headless.
+      FOLLOW-UP 2026-09-05: (c) respawn sweep -- monitor re-hides new
+      windows of hidden-marked works every cycle (`sweep_hidden_windows`;
+      kill clears hidden tracking); (d) dashboard no-flicker -- rebuild
+      only when running/hidden/manifest signature changes; (e) ALL row
+      actions async (worker thread + after()-back -- scans blocked the
+      tk mainloop = the "UI hangs" bug); (f) Restart button per row
+      (kill+launch fresh -- the way out of headless-orphan state).
+- [ ] **2. Kill the .bat files: inline commands + variables** — New Task
+      today requires picking a `.bat` file; user wants to type commands
+      directly instead. Design: work entry gains `steps: ["cd ...",
+      "npm run dev --... %port%"]` + `vars: {port: "3000"}` with
+      `%VAR%` expansion at launch, run through a Terminal step type
+      (vs App step type for exe/lnk). Scope: implement + TEST on
+      **hamster combo first**, then migrate the rest, then DELETE the
+      Desktop `.bat` launchers. (Detection `match` tokens stay
+      CommandLine-based.)
+- [ ] **3. New Group** — dashboard can create a group (label + pick
+      member works), rename/delete it. Persisted in works.json.
+- [ ] **4. Dashboard scroll** — content is cut at Midnight-Rider combo
+      (2nd work unreachable). The canvas+scrollbar exists but mouse-wheel
+      doesn't scroll (and region/width may be off). Fix: wheel binding
+      (`<MouseWheel>` → yview_scroll) + verify all 8 works reachable.
+- [ ] **5. Real popup behavior** — the dashboard is a draggable
+      always-on-top window ("fake window": doesn't dismiss, floats over
+      everything). Wanted: tray-flyout behavior -- auto-dismiss on
+      focus loss (click elsewhere closes it), keep position pinned near
+      tray. Careful: editor Toplevels/dialogs must not trigger dismiss.
+
+## 8. Verification (how to prove DONE)
 - `python test_wc_core.py` passes (model build, detection, group OR, kill-via-group,
   Space OFF→ON → Enter acts). — **PASSING.**
 - Headless key-sequence simulation confirms the state machine: Space → `[X]`,

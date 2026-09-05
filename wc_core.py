@@ -19,6 +19,12 @@ import subprocess
 import time
 from pathlib import Path
 
+# Background subprocesses (powershell scans, taskkill) must not flash a
+# console window when wc runs under pythonw (wctray has no console to
+# inherit, so Windows pops a visible terminal on EVERY scan otherwise).
+# Works launched via run_work() are EXCLUDED -- those must stay VISIBLE.
+_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 DESKTOP = Path(os.environ.get("USERPROFILE", "")) / "OneDrive" / "Desktop"
 if not DESKTOP.exists():
     DESKTOP = Path(os.environ.get("USERPROFILE", "")) / "Desktop"
@@ -93,7 +99,11 @@ def kill_tokens_for(work: dict) -> list[str]:
         if bn and bn not in toks:
             toks.append(bn)
     wid = work.get("id") or ""
-    if wid and wid not in toks:
+    # Auto-adding the bare work id is a guess for reaching the outer
+    # `cmd /K "bat.bat"` wrapper -- but a short id (e.g. "a") matches the
+    # whole machine as a kill token (2026-09-05 incident). Only add it
+    # when it is specific enough to be safe.
+    if wid and wid not in toks and len(wid) >= 4:
         toks.append(wid)
     return toks
 
@@ -115,6 +125,7 @@ def scan_commandlines() -> list[str]:
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
             capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WINDOW,
         )
         return [ln for ln in (r.stdout or "").splitlines() if ln]
     except Exception:
@@ -160,104 +171,128 @@ def run_work(work: dict) -> None:
     register(work)
 
 
-def kill_work(work: dict) -> None:
-    """Kill the work's whole process tree, including the visible window.
+def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
+    """Kill the work's process tree: matched processes + their DESCENDANTS.
+
+    SAFETY (2026-09-05 incident — the old ancestor walk killed the agent's
+    own session shell plus the user's Discord/VSCode/work windows): this
+    function walks DOWN ONLY and NEVER walks up to ancestors. The launcher
+    (this python), its whole parent chain, and the scanner powershell form
+    a PROTECTED set that can never enter the kill list — even if their
+    CommandLine happens to contain a match token (e.g. our own shell
+    echoing the token in its command line).
 
     The reliable way to close a console window (cmd /k, npx, etc.) on
-    Windows is to `taskkill /F /T` the top-of-tree cmd.exe PID that owns
-    it. The /T flag takes down the whole subtree (cmd + npx + conhost) in
-    one shot, so the user sees the window actually close -- not just the
-    inner command terminating while the cmd host window stays alive.
+    Windows is `taskkill /F` on the kill set: the matched seed itself
+    (the visible `cmd /K bat.bat` wrapper carries the bat basename as a
+    token via kill_tokens_for, so it is a seed directly — no upward walk
+    needed) plus every descendant (npm/node/npx children). Per-PID /F
+    (no /T) avoids cascading into shared conhosts of unrelated windows.
+    powershell* processes are never killed (they host user sessions).
 
-    We do this in two passes:
-      1) Walk up from any matched process to find the topmost cmd.exe in
-         the chain. That cmd owns the window. taskkill /F /T it.
-      2) Fallback: if no cmd ancestor was found (e.g. a process was
-         spawned directly without a cmd wrapper), taskkill /F /T the
-         matched leaf PID itself.
-
-    We do NOT use `Invoke-CimMethod Terminate` because it leaves the
-    conhost window alive as a zombie once the cmd process dies. The
-    `taskkill /F /T` approach is what reliably closes the window.
+    With dry_run=True, returns the sorted kill PID list WITHOUT killing —
+    show it to the user BEFORE any real kill. Otherwise kills each PID,
+    unregisters the work, and returns None.
     """
-    toks = kill_tokens_for(work)
+    # Drop dangerously short tokens (1-2 chars match the whole machine --
+    # e.g. a 1-letter work id). Killing is destructive: a tiny token can
+    # never be what anyone wants. Detection (is_running) is unaffected.
+    toks = [t for t in kill_tokens_for(work) if len(t) >= 3]
     if not toks:
-        return
+        return [] if dry_run else None
     my_pid = os.getpid()  # the python (wc) process -- never touch
     toks_ps = ",".join("'" + t.replace("'", "''") + "'" for t in toks)
-    # Single PowerShell call: find top-of-tree cmd.exe PIDs (the window
-    # owners) for this work's process tree. Walk up from each matched
-    # leaf through its cmd ancestors, stopping at our own python PID
-    # and at powershell* (never touch wc itself).
-    tk_ps = (
+    # Single PowerShell call: seeds (token match, minus protected) then
+    # BFS DOWN through the children map. No ancestor walk, ever.
+    # (Trap: NEVER use $pid as a loop variable -- $PID is read-only.)
+    ps = (
         "$ErrorActionPreference = 'SilentlyContinue'; "
         "$me = $PID; "
         "$wcPID = " + str(my_pid) + "; "
         "$toks = @(" + toks_ps + "); "
-        "$byId = @{}; foreach ($p in (Get-CimInstance Win32_Process)) "
-        "  { $byId[$p.ProcessId] = $p }; "
+        "$byId = @{}; $children = @{}; "
+        "foreach ($p in (Get-CimInstance Win32_Process)) "
+        "{ $byId[$p.ProcessId] = $p; $parid = $p.ParentProcessId; "
+        "if (-not $children.ContainsKey($parid)) { $children[$parid] = New-Object System.Collections.Generic.List[int] }; "
+        "$children[$parid].Add($p.ProcessId) }; "
+        # Protected = scanner + launcher + every ancestor of the launcher
+        # up to the root. Nothing in here can ever be killed.
+        "$prot = New-Object System.Collections.Generic.HashSet[int]; "
+        "[void]$prot.Add($me); [void]$prot.Add($wcPID); "
+        "$cur = $wcPID; $guard = 0; "
+        "while ($cur -gt 0 -and $guard -lt 64) "
+        "{ $guard++; $anc = $byId[$cur]; if ($null -eq $anc) { break }; "
+        "$nx = $anc.ParentProcessId; if ($nx -le 0 -or $prot.Contains($nx)) { break }; "
+        "[void]$prot.Add($nx); $cur = $nx }; "
+        # Seeds: CommandLine token match, skipping powershell* + protected.
         "$seed = New-Object System.Collections.Generic.HashSet[int]; "
         "foreach ($p in $byId.Values) { "
         "  if ($null -eq $p.CommandLine) { continue } "
         "  if ($p.Name -like 'powershell*') { continue } "
-        "  if ($p.ProcessId -eq $me) { continue } "
-        "  if ($p.ProcessId -eq $wcPID) { continue } "
+        # Interactive GUI apps are NEVER valid kill seeds: a match token can
+        # appear in a browser tab URL / chat window (2026-09-05: token
+        # 'omniroute' matched the user's Brave PID 4524 -- Stop would have
+        # taken down the whole browser). Keep in sync with find_work_hwnds.
+        "  if (@('brave.exe','chrome.exe','msedge.exe','firefox.exe','opera.exe','vivaldi.exe','arc.exe','explorer.exe','discord.exe','slack.exe','teams.exe') -contains $p.Name) { continue } "
+        "  if ($prot.Contains($p.ProcessId)) { continue } "
         "  foreach ($t in $toks) { "
         "    if ($p.CommandLine -like ('*' + $t + '*')) { "
         "      [void]$seed.Add($p.ProcessId); break "
         "    } "
         "  } "
         "} "
-        # Walk up from each seed, collecting cmd.exe ancestors until we
-        # reach wc / powershell / a non-cmd process. The TOP-most cmd
-        # in the chain is the window owner.
-        "$top = New-Object System.Collections.Generic.HashSet[int]; "
-        "foreach ($s in $seed) { "
-        "  $cur = $s; "
-        "  $best = $null; "
-        "  while ($true) { "
-        "    $p = $byId[$cur]; if ($null -eq $p) { break }; "
-        "    if ($p.Name -eq 'cmd.exe') { $best = $cur }; "
-        "    $ppid = $p.ParentProcessId; "
-        "    if ($ppid -eq 0 -or $ppid -eq $me -or $ppid -eq $wcPID) { break }; "
-        "    $par = $byId[$ppid]; if ($null -eq $par) { break }; "
-        "    if ($par.Name -like 'powershell*') { break }; "
-        "    $cur = $ppid; "
+        # Expand DOWN ONLY (BFS over children). Protected PIDs are never
+        # added even if parented under a seed; powershell* is traversed
+        # through but never added (it hosts user sessions).
+        "$kill = New-Object System.Collections.Generic.HashSet[int]; "
+        "$seen = New-Object System.Collections.Generic.HashSet[int]; "
+        "$queue = New-Object System.Collections.Generic.Queue[int]; "
+        "foreach ($s in $seed) { [void]$seen.Add($s); [void]$kill.Add($s); $queue.Enqueue($s) }; "
+        "while ($queue.Count -gt 0) { "
+        "  $c = $queue.Dequeue(); "
+        "  if ($children.ContainsKey($c)) { "
+        "    foreach ($ch in $children[$c]) { "
+        "      if ($prot.Contains($ch)) { continue }; "
+        "      if (-not $seen.Add($ch)) { continue }; "
+        "      $chn = $byId[$ch]; "
+        "      if ($null -eq $chn -or $chn.Name -notlike 'powershell*') { [void]$kill.Add($ch) }; "
+        "      $queue.Enqueue($ch) "
+        "    } "
         "  } "
-        "  if ($null -ne $best) { [void]$top.Add($best) } "
         "} "
-        # Output the top cmd PIDs we found (one per line).
-        "foreach ($p in $top) { Write-Output $p } "
-        # If we found NO top cmd (e.g. the work has no cmd wrapper at
-        # all), fall back to taskkill on the seed PIDs themselves.
-        "if ($top.Count -eq 0) { foreach ($s in $seed) { Write-Output ('leaf:' + $s) } }"
+        "foreach ($k in $kill) { Write-Output $k }"
     )
+    pids: list[int] = []
     try:
         r = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", tk_ps],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
             capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WINDOW,
         )
         for line in (r.stdout or "").splitlines():
             line = line.strip()
-            if not line:
-                continue
-            if line.startswith("leaf:"):
-                # No cmd wrapper -- kill the leaf process itself.
-                pid_str = line[len("leaf:"):]
-            else:
-                pid_str = line
-            if not pid_str.isdigit():
-                continue
-            # `taskkill /F /T` -- /F force, /T with children (takes
-            # down the conhost window too, so the user sees the window
-            # actually close). Plain `Terminate` does not do this.
+            if line.isdigit():
+                pids.append(int(line))
+    except Exception:
+        pass
+    pids = sorted(set(pids))
+    if dry_run:
+        return pids
+    try:
+        for kpid in pids:
+            # `taskkill /F` (no /T) on EACH pid in the downward set. We
+            # deliberately avoid /T because tree-kill cascades into shared
+            # conhost processes of unrelated windows.
             subprocess.run(
-                ["taskkill.exe", "/F", "/T", "/PID", pid_str],
+                ["taskkill.exe", "/F", "/PID", str(kpid)],
                 capture_output=True, text=True, timeout=10,
+                creationflags=_NO_WINDOW,
             )
     except Exception:
         pass
+    _HIDDEN_HWNDS.pop(work.get("id", ""), None)  # dead windows need no tracking
     unregister(work)
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -278,10 +313,14 @@ def find_work_hwnds(work: dict) -> list[int]:
     # also need the PID for each CommandLine
     ps = (
         "$me = $PID; "
-        "$toks = @(" + ",".join("'" + t.replace("'", "''") + "'" for t in toks) + "); "
+        "$toks = @(" + ", ".join("'" + t.replace("'", "''") + "'" for t in toks) + "); "
+        # Same NEVER-seed GUI list as kill_work (a token can hide in a tab
+        # URL -- we must never hide the user's browser/chat/shell).
+        "$badgui = @('brave.exe','chrome.exe','msedge.exe','firefox.exe','opera.exe','vivaldi.exe','arc.exe','explorer.exe','discord.exe','slack.exe','teams.exe'); "
         "foreach ($p in (Get-CimInstance Win32_Process)) { "
         "  if ($null -eq $p.CommandLine) { continue } "
         "  if ($p.Name -like 'powershell*') { continue } "
+        "  if ($badgui -contains $p.Name) { continue } "
         "  if ($p.ProcessId -eq $me) { continue } "
         "  foreach ($t in $toks) { "
         "    if ($p.CommandLine -like ('*' + $t + '*')) { "
@@ -294,6 +333,7 @@ def find_work_hwnds(work: dict) -> list[int]:
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
             capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WINDOW,
         )
         for line in (r.stdout or "").splitlines():
             line = line.strip()
@@ -327,6 +367,7 @@ def find_work_hwnds(work: dict) -> list[int]:
         ar = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", anc_ps],
             capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WINDOW,
         )
         for line in (ar.stdout or "").splitlines():
             line = line.strip()
@@ -339,25 +380,223 @@ def find_work_hwnds(work: dict) -> list[int]:
 
 
 def _hwnds_for_pids(pids: set[int]) -> list[int]:
-    """Enumerate ALL windows (not just top-level -- a console window can be
-    owned by the conhost of a child, which IS a top-level window but the
-    cmd.exe process itself has no visible window) and return HWNDs whose
-    owning PID is in `pids`. Pure ctypes, no PowerShell."""
+    """Enumerate top-level windows owned by the work's process tree.
+
+    A console window is owned by conhost.exe, typically a CHILD of the
+    work's cmd -- while matchable seeds (node with an absolute script
+    path) sit BELOW that cmd. So raw-PID matching and upward-only walks
+    both miss. Owner set = seeds + bounded ancestors of seeds (up to 8,
+    stopping at our own protected chain) + one level of children below
+    each (catches conhost + wrapper cmds). powershell* is traversed but
+    never added (it hosts user sessions). Kill stays DOWNWARD-ONLY;
+    this up+down-1 expansion applies to HIDE (reversible) only.
+    Pure ctypes + one PowerShell call, no deps."""
     import ctypes
     user32 = ctypes.windll.user32
+    # PID -> (parent, name) maps (one scan).
+    parent: dict[int, int] = {}
+    names: dict[int, str] = {}
+    children: dict[int, list[int]] = {}
+    try:
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "foreach ($p in (Get-CimInstance Win32_Process)) { "
+             "Write-Output ($p.ProcessId.ToString() + '|' + $p.ParentProcessId.ToString() + '|' + $p.Name) }"],
+            capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WINDOW,
+        )
+        for line in (r.stdout or "").splitlines():
+            parts = line.strip().split("|")
+            if len(parts) != 3 or not parts[0].strip().isdigit():
+                continue
+            pid = int(parts[0].strip())
+            try:
+                ppid = int(parts[1].strip())
+            except Exception:
+                ppid = 0
+            parent[pid] = ppid
+            names[pid] = parts[2].strip()
+            children.setdefault(ppid, []).append(pid)
+    except Exception:
+        pass
+
+    def is_ps(pid: int) -> bool:
+        return (names.get(pid) or "").lower().startswith("powershell")
+
+    # Protected = our own chain (never hide our/the agent's windows).
+    me = os.getpid()
+    prot: set[int] = {me}
+    cur, guard = me, 0
+    while guard < 64:
+        guard += 1
+        par = parent.get(cur, 0)
+        if not par or par in prot:
+            break
+        prot.add(par)
+        cur = par
+
+    owners: set[int] = set()
+    for s in pids:
+        if s in prot or is_ps(s):
+            continue
+        owners.add(s)
+    # Up from each seed (bounded, stop at protected/missing/root).
+    for s in list(owners):
+        cur, depth = s, 0
+        while depth < 8:
+            par = parent.get(cur, 0)
+            if not par or par in prot:
+                break
+            if not is_ps(par):
+                owners.add(par)
+            cur, depth = par, depth + 1
+    # One level down (conhost + wrapper cmds). Never protected/powershell.
+    for o in list(owners):
+        for ch in children.get(o, []):
+            if ch in prot or is_ps(ch):
+                continue
+            owners.add(ch)
+    if not owners:
+        return []
+
     found: list[int] = []
     @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
     def cb(hwnd, _lparam):
         pid = ctypes.c_ulong(0)
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if pid.value in pids:
-            # Only consider windows that are actually visible (not hidden,
-            # not zero-size, not tool windows).
-            if user32.IsWindowVisible(hwnd):
-                found.append(int(hwnd))
+        if int(pid.value) in owners:
+            try:
+                if user32.IsWindowVisible(hwnd):
+                    found.append(int(hwnd))
+            except Exception:
+                pass
         return 1
-    user32.EnumWindows(cb, 0)
+    try:
+        user32.EnumWindows(cb, 0)
+    except Exception:
+        pass
+    # keep the callback alive until EnumWindows returns
+    _hwnds_for_pids._cb = cb  # type: ignore[attr-defined]
     return found
+
+
+# --------------------------------------------------------------------------
+# True hide/show (tray-grade): SW_HIDE removes the window from the taskbar
+# AND Alt+Tab while the process keeps running. Restore with SW_SHOW.
+# Hidden HWNDs are tracked per work id because a hidden window no longer
+# enumerates as visible and can't be re-found by scan.
+# --------------------------------------------------------------------------
+_HIDDEN_HWNDS: dict[str, list[int]] = {}
+
+
+def set_hwnds_visible(hwnds: list[int], show: bool) -> int:
+    """ShowWindowAsync(SW_SHOW/SW_HIDE) over `hwnds`. Returns changed count."""
+    if not hwnds:
+        return 0
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.ShowWindowAsync.restype = ctypes.c_int
+    except Exception:
+        return 0
+    SW_HIDE, SW_SHOW = 0, 5
+    changed = 0
+    for h in hwnds:
+        try:
+            if user32.ShowWindowAsync(h, SW_SHOW if show else SW_HIDE):
+                changed += 1
+        except Exception:
+            pass
+    return changed
+
+
+def hide_work_windows(work: dict, retries: int = 3) -> tuple[int, str]:
+    """True-hide a running work's windows (gone from taskbar + Alt+Tab).
+
+    Retries the scan: right after Start the wrapper window exists before
+    any matchable child (node) has spawned, so the first scan can miss
+    a window that is staring at the user. Only the miss path waits.
+    """
+    wid = work.get("id", "")
+    hwnds = find_work_hwnds(work)
+    tries = 0
+    while not hwnds and tries < retries and is_running(work):
+        time.sleep(2.5)
+        tries += 1
+        hwnds = find_work_hwnds(work)
+    if not hwnds:
+        if _HIDDEN_HWNDS.get(wid):
+            return 0, "already hidden"
+        if is_running(work):
+            return 0, "running but has no window (headless)"
+        return 0, "not running -- nothing to hide"
+    n = set_hwnds_visible(hwnds, False)
+    if n:
+        _HIDDEN_HWNDS[wid] = hwnds
+        return n, f"hid {n} window(s) — task still running"
+    return 0, "could not hide window"
+
+
+def show_work_windows(work: dict) -> tuple[int, str]:
+    """Restore windows hidden by hide_work_windows."""
+    wid = work.get("id", "")
+    hwnds = _HIDDEN_HWNDS.get(wid) or []
+    if not hwnds:
+        return 0, "nothing hidden for this work"
+    n = set_hwnds_visible(hwnds, True)
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        for h in hwnds:
+            try:
+                user32.SetForegroundWindow(h)
+                break
+            except Exception:
+                pass
+    except Exception:
+        pass
+    _HIDDEN_HWNDS.pop(wid, None)
+    return n, f"restored {n} window(s)"
+
+
+def is_work_hidden(work: dict) -> bool:
+    return bool(_HIDDEN_HWNDS.get(work.get("id", "")))
+
+
+def hidden_work_ids() -> set[str]:
+    """Ids of works currently marked hidden (have tracked HWNDs)."""
+    return {wid for wid, h in _HIDDEN_HWNDS.items() if h}
+
+
+def sweep_hidden_windows(manifest: dict) -> dict[str, int]:
+    """Re-hide newly visible windows of hidden-marked works.
+
+    Dev servers fork fresh consoles AFTER hiding (npm/vite children);
+    the 3s monitor calls this so strays are re-hidden automatically.
+    Returns {work_id: newly_hidden_count}. No-op when nothing hidden.
+    """
+    reswept: dict[str, int] = {}
+    if not _HIDDEN_HWNDS:
+        return reswept
+    by_id = {w.get("id"): w for w in manifest.get("works", [])}
+    for wid in list(_HIDDEN_HWNDS):
+        w = by_id.get(wid)
+        if w is None:
+            continue
+        try:
+            hwnds = find_work_hwnds(w)  # visible ones only
+        except Exception:
+            continue
+        if not hwnds:
+            continue
+        n = set_hwnds_visible(hwnds, False)
+        if n:
+            merged = list(dict.fromkeys(_HIDDEN_HWNDS.get(wid, []) + hwnds))
+            _HIDDEN_HWNDS[wid] = merged
+            reswept[wid] = n
+    return reswept
 
 
 # --------------------------------------------------------------------------
