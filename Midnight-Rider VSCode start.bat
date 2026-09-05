@@ -9,4 +9,4 @@ echo.
 cmd /c start "" "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" "%PROJECT%"
 echo VS Code launched for %PROJECT%.
 echo Window left open for inspection.
-pause
+exit

@@ -1,0 +1,148 @@
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49605
+[_run] hwnd=3738166
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49965
+[_run] hwnd=460064
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49680
+[_run] hwnd=2165088
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49968
+[_run] hwnd=1246168
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49964
+[_run] hwnd=983966
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49968
+[_run] hwnd=1180574
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49688
+[_run] hwnd=853916
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49873
+[_run] hwnd=1312752
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49680
+[_run] hwnd=2884420
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49686
+[_run] hwnd=918836
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[wndproc] right-click on icon → _show_menu
+[wndproc] right-click on icon → _show_menu
+[wndproc] right-click on icon → _show_menu
+[wndproc] right-click on icon → _show_menu
+[wndproc] right-click on icon → _show_menu
+[wndproc] right-click on icon → _show_menu
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49635
+[_run] hwnd=7014008
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49854
+[_run] hwnd=3801924
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49984
+[_run] hwnd=721430
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49989
+[_run] hwnd=918038
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49986
+[_run] hwnd=16254020
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] thread started
+[_run] hinst=437846016
+[_run] class registered atom=49986
+[_run] hwnd=5047574
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[add_work_icon] uid=777 NIM_ADD -> 1
+[_run] thread started
+[_run] hinst=348061696
+[_run] class registered atom=49997
+[_run] hwnd=524636
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=101 NIM_ADD -> 1
+[add_work_icon] uid=102 NIM_ADD -> 1
+[stop] tray thread did not exit before timeout
+[stop] tray thread did not exit before timeout
+[stop] tray thread did not exit before timeout
+[stop] tray thread did not exit before timeout
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 0
+[_add_icon] FAILED: 
+[stop] tray thread did not exit before timeout
+[add_work_icon] uid=103 NIM_ADD -> 1
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 0
+[_add_icon] FAILED: 
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=100 NIM_SETVERSION failed
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 0
+[_add_icon] FAILED: 
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=100 NIM_SETVERSION failed
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 0
+[_add_icon] FAILED: 
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=100 NIM_SETVERSION failed
+[_run] thread started
+[_run] hinst=140699181711360
+[_run] class registered atom=49326
+[_run] hwnd=1376606
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] message loop ended
+[_run] thread started
+[_run] hinst=140699181711360
+[_run] class registered atom=49918
+[_run] hwnd=1507676
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 0
+[_add_icon] FAILED: 
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=100 NIM_SETVERSION failed; using legacy callbacks
+[_run] message loop ended
+[_run] thread started
+[_run] hinst=140699181711360
+[_run] class registered atom=49984
+[_run] hwnd=2820460
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True

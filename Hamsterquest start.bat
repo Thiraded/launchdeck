@@ -6,10 +6,10 @@ if not exist "%APPDIR%" goto :no_appdir
 if not exist "%APPDIR%\package.json" goto :no_pkg
 
 pushd "%APPDIR%"
-start "Hamsterquest" cmd /k "call npm run dev"
+start "Hamsterquest" cmd /k "npm run dev"
 popd
 echo [Hamsterquest] started.
-exit /b 0
+exit
 
 :no_appdir
 echo [Hamsterquest] %APPDIR% NOT FOUND -- drive missing.

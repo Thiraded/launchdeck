@@ -292,6 +292,23 @@ Do these ONE AT A TIME, in order. Status tracked here.
       focus loss (click elsewhere closes it), keep position pinned near
       tray. Careful: editor Toplevels/dialogs must not trigger dismiss.
 
+### PARK-IN-^ TRIAL (B, 2026-09-05 evening) — user verdict: STILL BROKEN
+Implemented + headless-verified: per-work tray icon on Hide (green,
+tooltip "🟢 label (hidden) — click to restore" + balloon), click routes
+by icon-id HIWORD to unpark+restore, icons auto-removed on
+Show/Stop/kill/delete/quit, synthetic-click e2e PASS (queue got the
+unpark action), click-mask v4 fix, guard/election/takeover safety net.
+Live log: 3 parks of **Hamster-Clint** uid=100/101/102 (NIM_ADD=1 all).
+Clint .bat shape DIFFERS from Server: runs `cmd /k npm…` INLINE in the
+launcher console (no `start`) -- single shared console window.
+Hypotheses for the failure (ranked): (1) dead-icon clicks are a silent
+no-op (old uids 100/101 if delete lagged); (2) restore lands BEHIND
+other windows (SW_SHOW + best-effort foreground); (3) Clint single-
+console shape vs hide/show/kill token coverage; (4) sweep-vs-restore
+race (unlikely -- show pops tracking first). NEEDED FROM USER: how many
+green icons in ^ right now? click one -- any balloon/status message?
+window visible anywhere after?
+
 ## 8. Verification (how to prove DONE)
 - `python test_wc_core.py` passes (model build, detection, group OR, kill-via-group,
   Space OFF→ON → Enter acts). — **PASSING.**
