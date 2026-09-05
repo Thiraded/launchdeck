@@ -169,7 +169,7 @@ def _scan_table_gowc() -> list[tuple[int, int, str, str]] | None:
     try:
         r = subprocess.run(
             [str(_GOWC), "scan"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             creationflags=_NO_WINDOW,
         )
         if r.returncode != 0:
@@ -189,7 +189,7 @@ def _scan_table_ps() -> list[tuple[int, int, str, str]]:
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive",
              "-Command", ps],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             creationflags=_NO_WINDOW,
         )
         return _parse_table_rows(r.stdout)
@@ -362,7 +362,7 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
         try:
             subprocess.run(
                 ["taskkill.exe"] + args,
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
                 creationflags=_NO_WINDOW,
             )
         except Exception:
@@ -393,7 +393,7 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
         try:
             r = subprocess.run(
                 [str(_GOWC), "kill"] + [str(k) for k in pids],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 creationflags=_NO_WINDOW,
             )
             swept = r.returncode == 0
@@ -408,6 +408,49 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
 
 
 WM_CLOSE = 0x0010  # Alt+F4 / clicking X -- the graceful window close
+SC_CLOSE = 0xF060    # system-menu Close item (the X button)
+MF_BYCOMMAND = 0x0000
+
+
+def _disarm_close_button(hwnds: list[int]) -> int:
+    """Grey out the X button (SC_CLOSE) on the work's CONSOLE windows.
+
+    A stray X-click while node survives the console-close is the #1 headless
+    creator (proven in the field: npm/node outlive their console, and NO API
+    can re-window them afterwards). Conhost-owned windows ONLY -- IDE/GUI
+    apps untouched. Our own close paths bypass the menu state (direct
+    WM_CLOSE, CTRL_CLOSE via taskkill), so Stop/Restart keep working.
+    Returns the disarmed count. Never raises.
+    """
+    hs = [h for h in dict.fromkeys(hwnds or []) if h]
+    if not hs:
+        return 0
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.GetSystemMenu.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.GetSystemMenu.restype = ctypes.c_void_p
+        user32.DeleteMenu.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                      ctypes.c_uint]
+        user32.DeleteMenu.restype = ctypes.c_int
+    except Exception:
+        return 0
+    try:
+        owners = _hwnd_owner_pids(hs)
+        names = {pid: (name or "") for pid, _pp, name, _c in scan_table()}
+    except Exception:
+        return 0
+    n = 0
+    for h in hs:
+        try:
+            if names.get(owners.get(h, 0), "").lower() != "conhost.exe":
+                continue
+            menu = user32.GetSystemMenu(h, False)
+            if menu and user32.DeleteMenu(menu, SC_CLOSE, MF_BYCOMMAND):
+                n += 1
+        except Exception:
+            pass
+    return n
 
 
 def close_work_windows(work: dict) -> int:
@@ -481,6 +524,16 @@ def find_work_hwnds(work: dict) -> list[int]:
         return names.get(pid, "").lower().startswith("powershell")
 
     toks_low = [t.lower() for t in toks]
+    # 0) recorded window from launch-capture (registry-persisted). Validated
+    # live against this same table; dead entries fall through silently.
+    recorded: list[int] = []
+    try:
+        live = set(names)
+        for h in recorded_hwnds(work.get("id", "")):
+            if h and _is_live_hwnd_owned(h, live):
+                recorded.append(h)
+    except Exception:
+        pass
     pids = {pid for pid, cmd in cmds.items()
             if cmd and not _is_ps(pid)
             and names.get(pid, "").lower() not in _NEVER_SEED_GUI
@@ -518,6 +571,9 @@ def find_work_hwnds(work: dict) -> list[int]:
                 found.append(h)
     except Exception:
         pass
+    for h in recorded:
+        if h not in found:
+            found.append(h)
     return found
 
 
@@ -929,6 +985,141 @@ def unregister(work: dict) -> None:
     _save_registry(data)
 
 
+def record_work_hwnd(wid: str, hwnd: int, title: str = "", pid: int = 0) -> None:
+    """Remember a window a launch produced (registry-persisted, so it
+    survives restarts -- unlike the old in-memory tracking that orphaned
+    hidden windows when wc/wctray restarted). No-op when the work is not
+    registered (killed meanwhile) so a dead work is never resurrected."""
+    try:
+        data = _load_registry()
+        info = data.get(wid)
+        if not isinstance(info, dict):
+            return
+        hw = list(info.get("hwnds") or [])
+        if hwnd and int(hwnd) not in hw:
+            hw.append(int(hwnd))
+        info["hwnds"] = hw[-4:]  # bounded: a work never owns more windows
+        if title:
+            info["hwnd_title"] = str(title)[:120]
+        if pid:
+            info["hwnd_pid"] = int(pid)
+        data[wid] = info
+        _save_registry(data)
+    except Exception:
+        pass
+
+
+def recorded_hwnds(wid: str) -> list[int]:
+    """HWNDs a previous launch recorded for this work id (may be dead)."""
+    try:
+        info = _load_registry().get(wid)
+        if isinstance(info, dict):
+            return [int(h) for h in (info.get("hwnds") or []) if h]
+    except Exception:
+        pass
+    return []
+
+
+def _visible_top_hwnds() -> list[int]:
+    """Handles of all currently visible top-level windows (no titles)."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+        user32.IsWindowVisible.restype = ctypes.c_int
+    except Exception:
+        return []
+    out: list[int] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+    def cb(hwnd, _lparam):
+        try:
+            if user32.IsWindowVisible(hwnd):
+                out.append(int(hwnd))
+        except Exception:
+            pass
+        return 1
+    try:
+        user32.EnumWindows(cb, 0)
+    except Exception:
+        pass
+    _visible_top_hwnds._cb = cb  # type: ignore[attr-defined]
+    return out
+
+
+def _hwnd_titles(hwnds: list[int]) -> dict[int, str]:
+    """Batch-read window titles (informational only, never for matching)."""
+    out: dict[int, str] = {}
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                          ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        for h in dict.fromkeys(hwnds):
+            try:
+                buf = ctypes.create_unicode_buffer(256)
+                if user32.GetWindowTextW(h, buf, 256) > 0:
+                    out[h] = buf.value or ""
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return out
+
+
+def _is_live_hwnd_owned(hwnd: int, live_pids: set[int]) -> bool:
+    """IsWindow + owner process still alive. Attribution comes from the
+    launch-time record itself (and kill clears it), so any live owner goes."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [ctypes.c_void_p]
+        user32.IsWindow.restype = ctypes.c_int
+        if not user32.IsWindow(hwnd):
+            return False
+        return _hwnd_owner_pids([hwnd]).get(hwnd, 0) in live_pids
+    except Exception:
+        return False
+
+
+def _capture_work_window(work: dict, timeout: float = 6.0) -> None:
+    """Background: find the window(s) a fresh launch produced and record them.
+
+    Polls find_work_hwnds for NEW visible windows (owner-based, so a backend
+    that retitles or clears its console -- npm/node do -- cannot escape
+    capture). Records into the registry via record_work_hwnd. Never raises;
+    recording nothing just leaves step-0 empty (old behavior).
+    """
+    wid = work.get("id", "")
+    if not wid:
+        return
+    try:
+        before = set(_visible_top_hwnds())
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                fresh = [h for h in find_work_hwnds(work) if h not in before]
+            except Exception:
+                fresh = []
+            if fresh:
+                owners = _hwnd_owner_pids(fresh)
+                titles = _hwnd_titles(fresh)
+                for h in fresh:
+                    record_work_hwnd(wid, h, titles.get(h, ""),
+                                     owners.get(h, 0))
+                # No stray X-clicks: a closed window + surviving node is a
+                # headless orphan no API can re-window (proven 2026-09-06).
+                try:
+                    _disarm_close_button(fresh)
+                except Exception:
+                    pass
+                return
+            time.sleep(1.0)
+    except Exception:
+        pass
+
+
 def registry_running() -> list[dict]:
     """Return registry entries whose work is still alive. This is the list kc
     uses to display and kill currently-running works. Scans processes once."""
@@ -1159,6 +1350,14 @@ def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | Non
         return None
     run_work(work)   # spawns the .bat in its own visible window (per wc_core)
     _launched_count += 1
+    # Async window capture (daemon): records the launch's HWNDs into the
+    # registry so hide/close keep working after retitles and restarts.
+    # Never blocks Start; failures silently mean step-0 stays empty.
+    try:
+        threading.Thread(target=_capture_work_window, args=(work,),
+                         daemon=True).start()
+    except Exception:
+        pass
     return {"id": wid, "label": work.get("label", wid), "work": work,
             "launched": time.time(), "already": False}
 

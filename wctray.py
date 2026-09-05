@@ -59,7 +59,7 @@ def am_spawned_twin():
              "foreach ($p in (Get-CimInstance Win32_Process -Filter \"Name LIKE 'python%'\") ) "
              "{ if ($p.CommandLine -like '*wctray.py*') "
              "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
-            capture_output=True, text=True, timeout=25,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=25,
             creationflags=getattr(core, "_NO_WINDOW", 0))
         mine = ""
         elders = []
@@ -236,7 +236,7 @@ def reap_stillborn_twins(first_delay=60, period=300):
                  "-and $p.CommandLine -like '*wctray.py*') "
                  "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.Name + '|' + $p.ExecutablePath "
                  "+ '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
                 creationflags=getattr(core, "_NO_WINDOW", 0))
         except Exception as e:
             log(f"[reaper] scan failed: {e}")
@@ -265,7 +265,7 @@ def reap_stillborn_twins(first_delay=60, period=300):
             log(f"[reaper] reaping stillborn twin pid={pid} exe={exe}")
             try:
                 subprocess.run(["taskkill.exe", "/F", "/PID", str(pid)],
-                               capture_output=True, text=True, timeout=10,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
                                creationflags=getattr(core, "_NO_WINDOW", 0))
             except Exception as e:
                 log(f"[reaper] reap failed: {e}")

@@ -457,3 +457,42 @@ Thread 0x00003148 (most recent call first):
 21:24:06 [guard] port still held after wait -- exiting quietly
 21:54:30 wctray starting
 21:54:33 wctray ready (tray + dashboard up)
+00:18:03 wctray starting
+00:18:07 wctray ready (tray + dashboard up)
+00:18:40 parked 'Hamster-Clint start' as tray icon uid=100
+00:18:50 sweep re-hid 1 window(s) for hamster-clint
+00:18:56 sweep re-hid 1 window(s) for hamster-clint
+00:18:59 sweep re-hid 1 window(s) for hamster-clint
+00:19:02 sweep re-hid 1 window(s) for hamster-clint
+00:19:09 sweep re-hid 1 window(s) for hamster-clint
+00:26:15 wctray starting
+00:26:17 wctray ready (tray + dashboard up)
+00:44:18 parked 'Hamster-Server start' as tray icon uid=100
+00:44:19 sweep re-hid 1 window(s) for hamster-server
+00:44:54 parked 'Hamster-Server start' as tray icon uid=101
+00:44:57 sweep re-hid 1 window(s) for hamster-server
+00:45:00 sweep re-hid 1 window(s) for hamster-server
+00:45:03 sweep re-hid 1 window(s) for hamster-server
+00:45:06 sweep re-hid 1 window(s) for hamster-server
+00:45:09 sweep re-hid 1 window(s) for hamster-server
+00:45:13 sweep re-hid 1 window(s) for hamster-server
+00:45:16 sweep re-hid 1 window(s) for hamster-server
+00:45:19 sweep re-hid 1 window(s) for hamster-server
+00:45:22 sweep re-hid 1 window(s) for hamster-server
+00:45:25 sweep re-hid 1 window(s) for hamster-server
+00:45:28 sweep re-hid 1 window(s) for hamster-server
+00:45:32 sweep re-hid 1 window(s) for hamster-server
+00:45:35 sweep re-hid 1 window(s) for hamster-server
+00:45:38 sweep re-hid 1 window(s) for hamster-server
+00:45:41 sweep re-hid 1 window(s) for hamster-server
+00:45:44 sweep re-hid 1 window(s) for hamster-server
+00:45:48 sweep re-hid 1 window(s) for hamster-server
+00:45:51 sweep re-hid 1 window(s) for hamster-server
+00:45:54 sweep re-hid 1 window(s) for hamster-server
+00:45:57 sweep re-hid 1 window(s) for hamster-server
+00:47:15 wctray starting
+00:47:18 wctray ready (tray + dashboard up)
+00:49:59 wctray starting
+00:50:01 wctray ready (tray + dashboard up)
+00:52:17 wctray starting
+00:52:18 wctray ready (tray + dashboard up)

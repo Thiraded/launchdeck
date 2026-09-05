@@ -117,7 +117,19 @@ def toggle_work_window(node) -> str:
         return f"'{node.label}' is not running -- nothing to minimize"
     hwnds = core.find_work_hwnds(node.work)
     if not hwnds:
-        return f"'{node.label}' is running but its window was not found"
+        # The window may still be coming up right after Start -- retry
+        # bounded (find itself is gowc-cheap) before reporting not-found.
+        for _ in range(3):
+            time.sleep(0.8)
+            hwnds = core.find_work_hwnds(node.work)
+            if hwnds:
+                break
+    if not hwnds:
+        # No window at all: procs alive but the console is gone (headless
+        # orphan -- e.g. the window was closed while node survived the
+        # console-close). Restoring is impossible; Stop+Start mints fresh.
+        return (f"'{node.label}' is running with NO window (headless) -- "
+                f"press r to Restart it")
     key = node.key
     if key in _minimized_hwnds and _minimized_hwnds[key]:
         # Currently minimized -> restore
@@ -166,7 +178,7 @@ def flatten(model):
 def render(model, states, cursor, status):
     clear()
     print(f"{BOLD}  WORK COMBO  -  manage works (launch / kill){RESET}")
-    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: minimize work to taskbar  Esc/q: quit{RESET}")
+    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: minimize  r: restart cursor/group  Esc/q: quit{RESET}")
     if status:
         print(f"  {YELLOW}{status}{RESET}")
     print()
@@ -322,6 +334,31 @@ def selected_works(model, states) -> list:
     return uniq
 
 
+def restart_nodes(nodes) -> str:
+    """r handler: kill each running work, wait for death (bounded, so the
+    port frees), then launch each one fresh. The one-press answer to
+    headless orphans (no API can re-window them -- rebirth instead)."""
+    works = [(n, n.work) for n in nodes if n.kind == "work" and n.work]
+    if not works:
+        return "r needs a work line (cursor on one, or a group)"
+    with _running_lock:
+        running_set = set(_running_cache)
+    names = []
+    for node, w in works:
+        if node.key in running_set or core.is_running(w):
+            core.kill_work(w)
+            for _ in range(10):
+                try:
+                    if not core.is_running(w):
+                        break
+                except Exception:
+                    break
+                time.sleep(0.5)
+        core.launch_work(w)
+        names.append(w.get("label", w.get("id", "?")))
+    return f"Restarted: {', '.join(names)}"
+
+
 def act_on_selected(model, states):
     """Enter handler: for every [X] node, KILL if running else LAUNCH.
     Returns a human-readable status string.
@@ -389,6 +426,16 @@ def main():
             # Hide / show the cursor's WORK terminal window (not wc).
             node = rows[cursor][0]
             status = toggle_work_window(node)
+            continue
+
+        if ch == "r" or ch == "R":
+            # Restart the cursor's work (or a group's members): kill + fresh launch.
+            node = rows[cursor][0]
+            if node.kind == "group":
+                status = restart_nodes([m for m in core.member_nodes(model, node)])
+            else:
+                status = restart_nodes([node])
+            time.sleep(0.4)
             continue
 
         if ch == "UP":

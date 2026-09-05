@@ -146,3 +146,32 @@
 [_run] hwnd=2820460
 [_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
 [_run] icon added — available=True
+[_run] thread started
+[_run] hinst=140695159898112
+[_run] class registered atom=49855
+[_run] hwnd=45614562
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[add_work_icon] uid=100 NIM_ADD -> 1
+[_run] message loop ended
+[_run] thread started
+[_run] hinst=140695159898112
+[_run] class registered atom=49691
+[_run] hwnd=3671528
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[add_work_icon] uid=100 NIM_ADD -> 1
+[add_work_icon] uid=101 NIM_ADD -> 1
+[_run] thread started
+[_run] hinst=140695159898112
+[_run] class registered atom=50037
+[_run] hwnd=8849020
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
+[_run] message loop ended
+[_run] thread started
+[_run] hinst=140695159898112
+[_run] class registered atom=50020
+[_run] hwnd=13108710
+[_add_icon] Shell_NotifyIconW(NIM_ADD) -> 1
+[_run] icon added — available=True
