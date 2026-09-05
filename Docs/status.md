@@ -19,10 +19,11 @@
 
 ## Open gates (need a human at the keyboard)
 
-1. Start a work fresh -> `h` must find its window immediately
-   (launch-capture + title + retry all landed since the last test).
+1. Start a work fresh -> `h` must find its window (hide-quality
+   gate: `2ed9c4a` regressed this; hide path reverted to
+   `new-version` shape).
 2. Stop -> window must vanish entirely.
-3. `r` on a headless case -> one-press rebirth.
+3. Headless case (running, no window) -> Stop + Start fresh.
 4. The original `wc.bat` smoke: Space -> `[X]`, Enter kills `[-]`,
    Enter launches stopped (§8 standing gate).
 5. `test_wc_core.py` — blocked until no live works are running.

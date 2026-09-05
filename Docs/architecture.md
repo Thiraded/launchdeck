@@ -3,7 +3,7 @@
 Entry points: `wc.bat` (console TUI `wc.py`) and `wctray.bat`
 (dashboard `wctray.py`, pythonw, no console). All logic lives in
 `wc_core.py` (no UI); both frontends funnel through `launch_work` /
-`kill_work`, so a fix in core covers every Start/Stop/Restart path.
+`kill_work`, so a fix in core covers every Start/Stop path.
 
 ## State tokens (`wc_core.py`)
 
@@ -14,7 +14,7 @@ RUN   "-"   [-]  detected as actually running (live, INFO only)
 ```
 
 `[-]` is info only — you cannot cancel it by keypress. To stop a running
-work you select it `[X]` and press Enter (kill), or press `r` (restart).
+work you select it `[X]` and press Enter (kill).
 
 ## Detection (`scan_table` + `is_running`)
 
@@ -33,8 +33,7 @@ it matters). `WINDOWTITLE` is not used — see `requirements.md`.
 `cmd.exe /c start "" <bat>` opens the visible window hosting the `.bat`.
 (`start` takes exactly one `""` title placeholder — a stray second `""`
 once made it open Explorer instead.) `register(work)` records
-`{label, bat, launched}` (+ `hwnds` from launch-capture, see
-`windows.md`) into `registry.json`. wc never auto-closes after launch;
+`{label, bat, launched}` into `registry.json`. wc never auto-closes after launch;
 it is a persistent manager.
 
 `_launched_count` / `MAX_LAUNCHES` caps total spawns per session.
@@ -57,7 +56,7 @@ are group members never render standalone.
 
 Cursor nav (Up/Down), `Space`/`t` toggles `[ ]`<->`[X]`, `Enter` acts on
 every `[X]` (kill if `[-]`, else launch), `h` minimizes the cursor's
-work window (see `windows.md`), `r` restarts cursor work/group,
+work window (see `windows.md`),
 `Esc`/`q` quits (saves `wc.settings.txt` preset). Live `[-]` from the
 background thread; Enter trusts the visible cache over a fresh scan
 (a failed scan must never turn a kill into an accidental launch).

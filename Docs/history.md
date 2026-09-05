@@ -46,3 +46,12 @@ newer working tree.
 - **2026-09-06:** Thai bytes in a browser tab CommandLine crashed scans
   under locale `cp1252`. -> utf-8+replace on every capture
   (see `verification.md`).
+
+## Hide-path revert (2026-09-06)
+
+`2ed9c4a` (launch-capture + X-disarm + `r` rebirth) made `h` hide worse
+than the `9c77ea3`/`new-version` shape, so `wc_core.py` / `wc.py` /
+`wctray.py` were reverted to `new-version` (+ kept utf-8+replace
+hardening); Docs trimmed of capture/disarm/rebirth refs;
+`wc_logs/*.log` untracked (`.track.bat` + `registry.json` stay tracked).
+`hermess.bat` kept (live shim points at it).

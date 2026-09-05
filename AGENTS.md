@@ -10,8 +10,8 @@
 
 Single-screen launcher that starts/stops dev servers and apps. Each
 work is a Windows `.bat` opening its OWN visible console window.
-`wc` (console TUI: Space select, Enter kill/launch, `h` minimize,
-`r` restart) does both jobs; `wctray` (dashboard, pythonw) is the
+`wc` (console TUI: Space select, Enter kill/launch, `h` minimize)
+does both jobs; `wctray` (dashboard, pythonw) is the
 tray twin. `kc` is dead — do not resurrect. Details: `Docs/architecture.md`.
 
 ## Layout
@@ -25,7 +25,7 @@ tray twin. `kc` is dead — do not resurrect. Details: `Docs/architecture.md`.
 | `*start.bat`, `GPT MCP.bat` | Per-work launchers (inline template, see `Docs/bat-template.md`). |
 | `hermess.bat` | Hermes launcher (moved in here; shimmed from `wc-bin`). |
 | `gowc/` + `gowc.exe` | Optional Go scan/kill accelerator (see `Docs/gowc.md`). |
-| `registry.json` | Runtime: launches, capture HWNDs, hidden tracking. Churns; normal. |
+| `registry.json` | Runtime: launches, hidden tracking. Churns; normal. |
 | `wc.settings.txt` | Selection preset. |
 | `test_wc_core.py`, `test_tray_foundation.py` | Tests (policy in `Docs/verification.md`). |
 | `Docs/` | ALL knowledge (below). `spec-*.md` history stays at root. |
@@ -39,7 +39,7 @@ holds the `wc` / `wctray` / `hermess` shims.
 - `Docs/architecture.md` — tokens, detection, launch, kill-overview, model, keys.
 - `Docs/bat-template.md` — the one true launcher shape + titles.
 - `Docs/kill-safety.md` — DOWN-ONLY, protected set, dry_run, passes, traps.
-- `Docs/windows.md` — find/hide/close/capture/disarm, headless doctrine.
+- `Docs/windows.md` — find/hide/close, headless doctrine.
 - `Docs/tray.md` — wctray behavior, backlog, PARK trial.
 - `Docs/gowc.md` — Go helper protocol, numbers, rebuild.
 - `Docs/verification.md` — gates + live-machine test policy.

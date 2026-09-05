@@ -1,4 +1,4 @@
-# Windows (hide / find / close) — owner sets, titles, capture, headless
+# Windows (hide / find / close) — owner sets, titles, headless
 
 ## Finding a work's windows (`find_work_hwnds`, `wc_core.py`)
 
@@ -24,26 +24,8 @@ Kill stays DOWNWARD-ONLY — see `kill-safety.md`.
 `h` on a running work minimizes its windows (`SW_SHOWMINIMIZED`, normal
 background-app feel — still on taskbar/Alt+Tab) and tracks HWNDs in
 `_minimized_hwnds`; `h` again restores (`SW_RESTORE`). The wc console is
-never touched. Not found after a bounded retry (3 x 0.8s, covers the
-launch race) → honest message (see Headless below), never a bare
-"not found".
-
-## Launch capture (retitle-proof, restart-proof)
-
-Backends rewrite console titles, and in-memory tracking died with
-restarts (orphaning hidden windows). So `launch_work` spawns a daemon
-that polls `find_work_hwnds` for NEW visible windows (owner-based —
-retitles can't escape it), records `{hwnd, title, pid}` into
-`registry.json`, and greys out the X button (see below). `find` step 0
-prefers recorded HWNDs validated live (`IsWindow` + owner alive).
-Kill clears them via `unregister`.
-
-## X button disarmed (`_disarm_close_button`)
-
-`DeleteMenu(SC_CLOSE)` on conhost-owned work windows at capture time.
-A stray X-click while node survives the console-close was the #1
-headless creator; our WM_CLOSE/taskkill paths bypass menu state, so
-Stop/Restart are unaffected. GUI apps never touched.
+never touched. When no window is found it reports
+"running but its window was not found" (see Headless below).
 
 ## Headless doctrine (researched 2026-09-06)
 
@@ -56,10 +38,9 @@ process.** Virtual desktops and elevation do NOT hide windows from
 EnumWindows (ruled out); SW_HIDE windows still enumerate — so "no HWND
 at all" always means truly windowless.
 
-Therefore PREVENT (X-disarm) + REBIRTH (`r` in wc.py = kill + bounded
-settle + fresh launch, cursor work or group; wctray Restart button is
-the same doctrine), never "restore". `h` on running-but-windowless
-says NO window and points at `r`.
+Therefore: no "restore" — Stop the work and Start it fresh for a new
+window (wctray's Restart button does exactly this). `h` on
+running-but-windowless reports not-found (see above).
 
 ## Known gaps (not bugs, documented limits)
 
@@ -69,5 +50,3 @@ says NO window and points at `r`.
   the user's tabs); process-level kill only.
 - wc.py has no respawn sweep (wctray does): a dev server forking a
   fresh console after minimize leaves the new one visible.
-- Minimized-tracking is per wc.py session for restore; recorded HWNDs
-  (registry) survive restarts for find/close.
