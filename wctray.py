@@ -1,14 +1,15 @@
 """wctray.py — wc in the Windows system tray (notification area, bottom-right).
 
 Click the tray icon -> popup dashboard (PowerToys Workspaces style):
-    [icon] label            (o) running / ( ) stopped   [Open/Hide/Show/Stop]
+    [icon] label            (o) running / ( ) stopped   [Start/Log/Stop]
 
   * tray icon lives at the taskbar's far right (notification area).
   * left-click = open/close the dashboard popup near the tray.
-  * right-click = quick menu (dashboard + per-work Start/Stop + Quit).
+  * right-click = quick menu (dashboard + per-work Start/Stop/Log + Quit).
   * dashboard has [+ New Task] + per-work edit/delete -> writes works.json.
-  * Hide = true hide (SW_HIDE: gone from taskbar AND Alt+Tab, process keeps
-    running). Show brings it back. Stop = kill tree + close window.
+  * ALL works are detached (no console): output goes to wc_logs and the
+    ☰ button tails it live. Stop = kill tree. There is no Hide --
+    detached mode is the only mode, nothing to hide or show.
   * optional "icon" per work in works.json (emoji, e.g. "icon": "🎮").
 
 Stdlib only (ctypes + tkinter). Run via wctray.bat (pythonw, no console).
@@ -182,6 +183,13 @@ def self_test():
     assert f["match"] == str(man0["works"][0].get("match", "") or "")
     assert f["steps"] == core.steps_to_text(man0["works"][0].get("steps") or [])
     print("self-test: fork prefill OK")
+    _found2, _i2 = [d.list_frame], 0
+    while _i2 < len(_found2):
+        _found2.extend(_found2[_i2].winfo_children())
+        _i2 += 1
+    _hide_btns = [x for x in _found2
+                  if isinstance(x, tk.Button) and x.cget("text") in ("Hide", "Show")]
+    assert not _hide_btns, "no Hide/Show buttons anywhere (detached-only)"
     man = core.load_manifest()
     assert core.slug_group_id("Hamster combo", man) != "hamstercombo"
     assert core.slug_group_id("New Group", man) == "g-new-group"
@@ -675,22 +683,12 @@ def toggle_start_stop(work):
         return f"started '{work.get('label')}'"
 
 
-def toggle_hide_show(work):
-    if core.is_work_hidden(work):
-        _n, msg = core.show_work_windows(work)
-        return msg
-    if not core.is_running(work):
-        return "not running — nothing to hide"
-    _n, msg = core.hide_work_windows(work)
-    return msg
-
-
 # --------------------------------------------------------------------------
 # tray with dynamic quick menu
 # --------------------------------------------------------------------------
 ID_DASHBOARD = 4001
 ID_QUIT = 4002
-ID_BASE = 5000  # per-work: BASE+i*2 = start/stop, +1 = hide/show
+ID_BASE = 5000  # per-work: BASE+i*2 = start/stop, +1 = log viewer
 
 
 class WorkTray(TrayIcon):
@@ -824,11 +822,9 @@ class WorkTray(TrayIcon):
             self._menu_ids[cmd] = (wid, "run")
             u32.AppendMenuW(hmenu, MF_STRING, cmd, item[:120])
             if wid in run:
-                hid = "Show" if core.is_work_hidden(w) else "Hide"
-                item2 = f"      {hid} window"
                 cmd2 = cmd + 1
-                self._menu_ids[cmd2] = (wid, "hide")
-                u32.AppendMenuW(hmenu, MF_STRING, cmd2, item2)
+                self._menu_ids[cmd2] = (wid, "log")
+                u32.AppendMenuW(hmenu, MF_STRING, cmd2, "      ☰ Log")
         u32.AppendMenuW(hmenu, MF_SEPARATOR, 0, None)
         u32.AppendMenuW(hmenu, MF_STRING, ID_QUIT, "Quit wctray")
         pt = POINT()
@@ -859,16 +855,10 @@ class WorkTray(TrayIcon):
         try:
             if act == "run":
                 log(toggle_start_stop(w))
+            elif act == "log":
+                actions.put(("log", wid))  # dashboard opens the viewer
             else:
-                msg = toggle_hide_show(w)
-                try:
-                    if core.is_work_hidden(w):
-                        self.park_work(wid, w.get("label", wid))
-                    else:
-                        self.unpark_work(wid, restore=False)
-                except Exception as e:
-                    log(f"menu park: {e}")
-                log(msg)
+                log(f"unknown menu action: {act}")
         except Exception as e:
             log(f"menu action failed: {e}")
 
@@ -985,6 +975,11 @@ class Dashboard:
             self.show()
         elif isinstance(action, tuple) and len(action) == 2 and action[0] == "unpark":
             self._do_unpark_action(action[1])
+        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "log":
+            w = work_by_id(action[1])
+            if w is not None:
+                self.show()
+                self.open_log_viewer(w)
         elif action == "refresh":
             self.refresh()
         elif action == "quit":
@@ -1333,16 +1328,13 @@ class Dashboard:
                           ).pack(side="right", padx=(0, 4))
             th_circle_btn(holder, "↻", lambda w=w: self._act_restart(w),
                           ).pack(side="right", padx=(0, 4))
-            if w.get("run") == "detached":
-                # No window exists in detached mode -- Hide is meaningless;
-                # the log viewer is the docker-logs equivalent instead.
-                th_circle_btn(holder, "☰",
-                              lambda w=w: self.open_log_viewer(w),
-                              ).pack(side="right", padx=(0, 4))
-            else:
-                th_button(holder, "Show" if v["hidden"] else "Hide",
-                          lambda w=w: self._act_hide(w),
-                          width=6).pack(side="right", padx=(0, 4))
+            # Detached is the only mode: no window exists, so the log
+            # viewer (docker-logs equivalent) stands in for Hide.
+            # A legacy windowed entry gets Log too -- edit + save
+            # migrates it to detached. There is no Hide anymore.
+            th_circle_btn(holder, "☰",
+                          lambda w=w: self.open_log_viewer(w),
+                          ).pack(side="right", padx=(0, 4))
             tog = th_circle_btn(holder, "⏹" if v["running"] else "▶",
                                 lambda w=w: self._act_run(w),
                                 style=None if v["running"] else "accent")
@@ -1400,16 +1392,10 @@ class Dashboard:
                                 lambda w=w: self._act_run(w),
                                 width=8, accent=not v["running"])
             tog_btn.pack(side="left")
-            if w.get("run") == "detached":
-                log_btn = th_button(left, "Log",
-                                    lambda w=w: self.open_log_viewer(w),
-                                    width=8)
-                log_btn.pack(side="left", padx=(6, 0))
-            else:
-                log_btn = th_button(left, "Show" if v["hidden"] else "Hide",
-                                    lambda w=w: self._act_hide(w),
-                                    width=8)
-                log_btn.pack(side="left", padx=(6, 0))
+            log_btn = th_button(left, "Log",
+                                lambda w=w: self.open_log_viewer(w),
+                                width=8)
+            log_btn.pack(side="left", padx=(6, 0))
             th_circle_btn(right, "🗑", lambda w=w: self.delete_work(w),
                           style="danger").pack(side="right")
             th_circle_btn(right, "✎", lambda w=w: self.open_editor(w),
@@ -1560,10 +1546,7 @@ class Dashboard:
                                   activebackground=TH_ACCENT_HI)
                 lb = refs.get("log_btn")
                 if lb is not None:
-                    if w.get("run") == "detached":
-                        lb.config(text="Log")
-                    else:
-                        lb.config(text="Show" if v["hidden"] else "Hide")
+                    lb.config(text="Log")
         except Exception:
             pass
 
@@ -1572,7 +1555,7 @@ class Dashboard:
 
         Called every _poll tick: blue starting… survives until the work
         is ACTUALLY running, so a stale cache can never flash white in
-        between. Fire-and-forget marks (hide/show) never reach here.
+        between.
         """
         pending = getattr(self, "_pending", None)
         if not pending:
@@ -1759,33 +1742,10 @@ class Dashboard:
         self._act_async(lambda: toggle_start_stop(w), f"{state} '{label}'…",
                         pending={wid: (state, state == "starting")})
 
-    def _act_hide(self, w):
-        wid = w.get("id", "")
-        label = w.get("label", wid)
-        if wid in self._pending:
-            self.say(f"already {self._pending[wid].get('state', 'working')} '{label}'…")
-            return
-        try:
-            hiding = not core.is_work_hidden(w)
-        except Exception:
-            hiding = True
-        state = "hiding" if hiding else "showing"
-        self._act_async(lambda: self._do_hide(w), f"{state} '{label}'…",
-                        pending={wid: (state, None)})
-
     def _do_hide(self, w):
-        msg = toggle_hide_show(w)
-        try:
-            if core.is_work_hidden(w):
-                if tray_host is not None and tray_host.park_work(
-                        w["id"], w.get("label", w["id"])):
-                    msg += " — parked in tray ^"
-            else:
-                if tray_host is not None:
-                    tray_host.unpark_work(w["id"], restore=False)
-        except Exception as e:
-            log(f"park wiring: {e}")
-        return msg
+        # Retired: detached is the only mode, nothing to hide or show.
+        # Kept as a no-op shout so any stale caller fails loudly.
+        raise RuntimeError("hide is retired (detached-only suite)")
 
     def _do_restart(self, w):
         try:
@@ -2322,7 +2282,8 @@ class Dashboard:
             entry = dict(work or {})
             entry.update({"id": wid, "label": label,
                           "icon": vals["icon"].get(),
-                          "detect": bool(vals["detect"].get())})
+                          "detect": bool(vals["detect"].get()),
+                          "run": "detached"})  # the only mode: every save migrates
             if steps:
                 # Inline mode: steps win at launch; a stored `bat` stays
                 # only as fallback (Hamster-Clint keeps both).

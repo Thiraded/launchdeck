@@ -160,6 +160,15 @@ clones in place right after the original. Pure prefill helper
 `_work_to_form` is headless-tested; the manifest write path is
 covered with a byte-exact restore.
 
+## Detached-only (2026-09-06)
+
+Hide is retired, never coming back: every editor save stamps
+`"run": "detached"`, rows and the tray menu show Log only (the
+windowed branch is gone), and `_do_hide` is a loud stub so any
+stale caller fails visibly instead of silently. The core
+hide/show/park backend stays dormant underneath (its tests still
+pass) — ripping it out is a separate job with no UI payoff.
+
 ## PARK-IN-^ trial (2026-09-05 evening) — verdict: STILL BROKEN
 
 Per-work tray icon on Hide + click-to-restore + auto-remove, all
