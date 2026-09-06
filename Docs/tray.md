@@ -132,6 +132,11 @@ Ordering lives in the editors, not on the rows: the group editor has
 an Order list (▲▼ moves, membership ticks sync both ways) and the
 task editor has ↑ Up / ↓ Down. Manifest order IS the display order;
 editor saves never re-sort (`self_test` guards the no-sort).
+Fork-twice is safe: the prefill label bumps ("copy 2") and creation
+mints a fresh id (`_unique_id`) instead of overwriting the first copy.
+Groups collapse accordion-style (▸/▾ header, choice persisted in
+`settings.collapsed`); collapsing only unpacks the kids container,
+so rows keep their widgets and there is no rebuild blink.
 The work icon carries the state color itself
 (green running / dim stopped / blue transitional) and the dot is
 gone; edge bar + status word back it up, so nothing is lost even
@@ -168,6 +173,24 @@ windowed branch is gone), and `_do_hide` is a loud stub so any
 stale caller fails visibly instead of silently. The core
 hide/show/park backend stays dormant underneath (its tests still
 pass) — ripping it out is a separate job with no UI payoff.
+
+## VSCode tracking (2026-09-06)
+
+Stock `code.exe` is single-instance: opening a folder from the CLI
+only signals the running instance, so the project path NEVER lands
+in any persistent CommandLine — `match: Code.exe` lit every VSCode
+work at once, and worse, Stop seeded kills on Code.exe (NOT in the
+protected GUI set) taking every VSCode window down. Fix: each
+tracked VSCode work launches its own profile
+(`--user-data-dir %LOCALAPPDATA%\wc-vscode\<id>`, stock extensions
+shared via `--extensions-dir`) and matches on that unique dir
+fragment. Dots track per-project, kills stay inside that instance
+tree, stock VSCode is never touched. First Start opens a fresh
+profile window (sign in for Settings Sync); old windows are
+unaffected. A fresh profile is vanilla (default dark): pre-seed it by
+copying the stock `%APPDATA%\Code\User` settings/snippets/profiles
+into each `%LOCALAPPDATA%\wc-vscode\<id>\User` (extensions are
+already shared via `--extensions-dir`, so the theme comes along).
 
 ## PARK-IN-^ trial (2026-09-05 evening) — verdict: STILL BROKEN
 

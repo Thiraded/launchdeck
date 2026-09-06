@@ -1,7 +1,7 @@
 # AGENTS.md — Work Combo (wc) launcher suite
 
 > Plain Python TUIs (stdlib only) + optional Go helper, driven by
-> `works.json`, living in `D:\WorkCombo` (git: `Thiraded/WorkCombo@main`).
+> `works.json`, living in `D:\workcombo` (git: `Thiraded/wc-launcher@main`).
 > This file is the INDEX: what the project is, where things are, the one
 > rule that never bends, and links into `Docs/`. Knowledge lives in
 > `Docs/` — keep it there, keep this file small.

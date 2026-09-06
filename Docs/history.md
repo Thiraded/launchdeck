@@ -55,3 +55,12 @@ than the `9c77ea3`/`new-version` shape, so `wc_core.py` / `wc.py` /
 hardening); Docs trimmed of capture/disarm/rebirth refs;
 `wc_logs/*.log` untracked (`.track.bat` + `registry.json` stay tracked).
 `hermess.bat` kept (live shim points at it).
+
+## Rename: `Thiraded/WorkCombo` -> `Thiraded/wc-launcher` + public (2026-09-06)
+
+Repo renamed and made public as a reusable launcher. `main` holds a
+generic `works.json` (examples only) + `README.md`; real local paths live
+on branch `personal`. Removed from tracking: 9 legacy `.bat` launchers
+(batless config since the steps migration), `gowc.exe` (rebuild via
+`go build` in `gowc/`), `spikes/` scratch, runtime files (`registry.json`,
+`wc.settings.txt`, `wc_logs/*.track.bat` — local-only, git-ignored).

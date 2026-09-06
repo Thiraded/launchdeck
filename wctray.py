@@ -283,6 +283,33 @@ def self_test():
     assert _swap_adjacent(["a", "b", "c"], "a", -1) == ["a", "b", "c"]
     assert _swap_adjacent(["a", "b", "c"], "c", +1) == ["a", "b", "c"]
     assert _swap_adjacent(["a"], "a", +1) == ["a"]
+    assert _unique_id("w-a-copy", ["w-a-copy"]) == "w-a-copy-2"
+    assert _unique_id("w-a-copy", ["x"]) == "w-a-copy"
+    raw2 = core.MANIFEST.read_text(encoding="utf-8")
+    try:
+        gid0 = core.load_manifest()["groups"][0]["id"]
+        was = gid0 in collapsed_groups()
+        kids0 = d._group_heads[gid0]["kids"]
+        d._toggle_group(gid0)
+        assert (gid0 in collapsed_groups()) != was
+        assert kids0.winfo_manager() == ("pack" if was else "")
+        d._toggle_group(gid0)
+        assert (gid0 in collapsed_groups()) == was
+    finally:
+        core.MANIFEST.write_text(raw2, encoding="utf-8")
+        col = collapsed_groups()
+        for _gid, _gr in d._group_heads.items():
+            try:
+                if _gid in col:
+                    _gr["kids"].pack_forget()
+                else:
+                    _gr["kids"].pack(fill="x")
+                _gr["tog"].itemconfig(_gr["tog"]._txt,
+                                      text="▸" if _gid in col else "▾")
+            except Exception:
+                pass
+        d.refresh()
+    print("self-test: group accordion OK")
     raw = core.MANIFEST.read_text(encoding="utf-8")
     try:
         w0 = core.load_manifest()["works"][0]
@@ -462,6 +489,16 @@ def _swap_adjacent(ids, wid, direction):
     return ids
 
 
+def _unique_id(base, ids):
+    """Fresh id off base; never collides (fork-twice guard). Pure."""
+    ids = set(ids)
+    nid, n = base, 2
+    while nid in ids:
+        nid = f"{base}-{n}"
+        n += 1
+    return nid
+
+
 def _row_view(w, run, pending):
     """Pure view-model for one row (headless-testable, no widgets).
 
@@ -498,7 +535,13 @@ def _work_to_form(src, manifest):
         if src.get("id") in g.get("members", []):
             disp = f"{g.get('label')} [{g.get('id')}]"
             break
-    return {"label": (src.get("label", "") or "") + " copy",
+    stem = (src.get("label", "") or "") + " copy"
+    labels = {w.get("label", "") for w in manifest.get("works", [])}
+    label, n = stem, 2
+    while label in labels:
+        label = f"{stem} {n}"
+        n += 1
+    return {"label": label,
             "bat": src.get("bat", "") or "",
             "match": str(src.get("match", "") or ""),
             "icon": src.get("icon", "⚡") or "⚡",
@@ -506,6 +549,23 @@ def _work_to_form(src, manifest):
             "detect": bool(src.get("detect", True)),
             "steps": core.steps_to_text(src.get("steps") or []),
             "vars": core.vars_to_text(src.get("vars") or {})}
+
+
+def _freeze(value):
+    """Stable string for struct comparison (lists/dicts included)."""
+    try:
+        return repr(value)
+    except Exception:
+        return ""
+
+
+def collapsed_groups():
+    """Set of collapsed group ids (manifest settings.collapsed)."""
+    try:
+        col = core.get_settings(core.load_manifest()).get("collapsed", [])
+    except Exception:
+        col = []
+    return {x for x in col if isinstance(x, str)}
 
 
 def dashboard_theme():
@@ -1303,13 +1363,20 @@ class Dashboard:
         shown = set()
 
         compact = dashboard_compact()
-        # Layout key: state flips update rows IN PLACE (no blink);
-        # only a real structural change rebuilds the widget tree.
+        # Layout key: state flips update rows IN PLACE (no blink).
+        # Works are fingerprinted WHOLE (any config edit rebuilds --
+        # otherwise row buttons keep a stale dict and Edit shows
+        # pre-edit values). Running/hidden/pending stay out: those
+        # flip constantly and update in place.
         struct = (compact,
                   tuple((g.get("id"), g.get("label"),
                          tuple(m for m in g.get("members", [])))
                         for g in manifest.get("groups", [])),
-                  tuple(w.get("id") for w in manifest.get("works", [])))
+                  tuple((w.get("id"),
+                         tuple(sorted((k, _freeze(v))
+                                      for k, v in w.items())))
+                        for w in manifest.get("works", [])))
+        collapsed = collapsed_groups()
 
         def _icon_btns(holder, w, v):
             """Uniform circular cluster (all 24px, snug to the glyph).
@@ -1434,20 +1501,40 @@ class Dashboard:
             self._rows = {}
             self._group_heads = {}
             for g in manifest.get("groups", []):
+                gid = g.get("id")
                 members = [by_id[m] for m in g.get("members", []) if m in by_id]
                 if not members:
                     continue
                 on = sum(1 for m in members if m.get("id") in run)
-                gf = tk.LabelFrame(self.list_frame, text=f"  {g.get('label', g.get('id'))}  ·  {on}/{len(members)} running  ",
-                                   font=TH_FONT_SECTION,
-                                   bg=TH_BG, fg=TH_DIM, relief="flat", bd=0,
-                                   labelanchor="nw")
-                gf.pack(fill="x", pady=(10, 2))
-                self._group_heads[g.get("id")] = gf
+                is_open = gid not in collapsed
+                gframe = tk.Frame(self.list_frame, bg=TH_BG)
+                gframe.pack(fill="x", pady=(10, 2))
+                head = tk.Frame(gframe, bg=TH_BG)
+                head.pack(fill="x", padx=2, pady=(0, 2))
+                tog = th_circle_btn(head, "▾" if is_open else "▸",
+                                    lambda gid=gid: self._toggle_group(gid),
+                                    style="ghost", size=22, font_size=9)
+                tog.pack(side="left")
+                title = tk.Label(head, text=f"  {g.get('label', gid)}",
+                                 font=TH_FONT_SECTION, bg=TH_BG, fg=TH_FG,
+                                 cursor="hand2")
+                title.pack(side="left")
+                title.bind("<Button-1>",
+                           lambda _e, gid=gid: self._toggle_group(gid))
+                cnt = tk.Label(head,
+                               text=f" · {on}/{len(members)} running  ",
+                               font=TH_FONT_S, bg=TH_BG, fg=TH_DIM)
+                cnt.pack(side="left")
+                kids = tk.Frame(gframe, bg=TH_BG)
+                kids.pack(fill="x")
+                self._group_heads[gid] = {"tog": tog, "title": title,
+                                          "cnt": cnt, "kids": kids}
                 for m in members:
-                    work_row(gf, m)
-                brow = tk.Frame(gf, bg=TH_BG)
+                    work_row(kids, m)
+                brow = tk.Frame(kids, bg=TH_BG)
                 brow.pack(fill="x", padx=6, pady=(0, 8))
+                if not is_open:
+                    kids.pack_forget()
                 th_button(brow, text="▶ Start all",
                           command=lambda ms=members: self._act_all(ms, True),
                           width=10, accent=True).pack(side="left")
@@ -1469,14 +1556,20 @@ class Dashboard:
                 if refs is not None:
                     self._update_row(refs, w, run)
             for g in manifest.get("groups", []):
-                head = self._group_heads.get(g.get("id"))
-                if head is None:
+                refs = self._group_heads.get(g.get("id"))
+                if not refs:
                     continue
                 try:
                     members = [by_id[m] for m in g.get("members", [])
                                if m in by_id]
                     on = sum(1 for m in members if m.get("id") in run)
-                    head.config(text=f"  {g.get('label', g.get('id'))}  ·  {on}/{len(members)} running  ")
+                    refs["title"].config(
+                        text=f"  {g.get('label', g.get('id'))}")
+                    refs["cnt"].config(
+                        text=f" · {on}/{len(members)} running  ")
+                    refs["tog"].itemconfig(
+                        refs["tog"]._txt,
+                        text="▾" if g.get("id") not in collapsed else "▸")
                 except Exception:
                     pass
         if not quiet:
@@ -1904,6 +1997,45 @@ class Dashboard:
         self.say(f"duplicated group '{label}'")
         self.refresh(quiet=True)
 
+    def _toggle_group(self, gid):
+        """Accordion: collapse/expand one group, persisting the choice.
+
+        Only the kids container packs/unpacks -- rows keep their widgets
+        and refs, so no rebuild and no blink. Counts refresh right after
+        through the in-place path.
+        """
+        try:
+            man = core.load_manifest()
+            st = core.get_settings(man)
+        except Exception:
+            return
+        col = [x for x in st.get("collapsed", []) if isinstance(x, str)]
+        if gid in col:
+            col.remove(gid)
+            is_open = True
+        else:
+            col.append(gid)
+            is_open = False
+        st["collapsed"] = col
+        man["settings"] = st
+        try:
+            core.save_manifest(man)
+        except Exception as e:
+            self.say(f"save failed: {e}")
+            return
+        refs = self._group_heads.get(gid)
+        if refs is not None:
+            try:
+                if is_open:
+                    refs["kids"].pack(fill="x")
+                else:
+                    refs["kids"].pack_forget()
+                refs["tog"].itemconfig(refs["tog"]._txt,
+                                       text="▾" if is_open else "▸")
+            except Exception:
+                pass
+        self.refresh(quiet=True)
+
     def _do_all(self, members, start):
         msgs = []
         for m in members:
@@ -2277,8 +2409,13 @@ class Dashboard:
                                            f"'{bat}' does not exist.\nSave anyway?"):
                     return
             man = core.load_manifest()
+            ids = [x.get("id") for x in man.get("works", [])]
             wid = (work or {}).get("id") or ("w-" + "".join(
                 c.lower() if c.isalnum() else "-" for c in label).strip("-")[:24])
+            if not (work or {}).get("id"):
+                # Creation (incl. fork): forking twice must mint "copy 2",
+                # never silently overwrite the first copy.
+                wid = _unique_id(wid, ids)
             entry = dict(work or {})
             entry.update({"id": wid, "label": label,
                           "icon": vals["icon"].get(),
@@ -2305,7 +2442,6 @@ class Dashboard:
                 entry["match"] = match or os.path.basename(bat)
                 entry.pop("steps", None)
                 entry.pop("vars", None)
-            ids = [x.get("id") for x in man["works"]]
             if wid in ids:
                 man["works"] = [entry if x.get("id") == wid else x for x in man["works"]]
             else:
