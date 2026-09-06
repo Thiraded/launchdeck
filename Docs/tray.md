@@ -14,6 +14,32 @@ re-hides new windows of hidden-marked works every cycle
 dashboard only on running/hidden/manifest change (no flicker), and
 per-work tray icons appear on Hide (green, click to restore).
 
+## Global hotkey (2026-09-06)
+
+One key for the tray itself (default **Alt+W**, changeable in Settings
+— the ⌨ button; stored under manifest `settings.hotkey`): toggles the
+dashboard from anywhere (`RegisterHotKey` on the tray window,
+`WM_HOTKEY` -> `toggle_ui`). Taken keys are logged, never fatal, and
+_poll retries every 15s until registered. Unregistered on quit.
+Thread rule (2026-09-06 root cause of every "taken" before it):
+`RegisterHotKey` must run on the window's OWNER thread -- direct calls
+from the tk thread fail with 1408, which used to be misreported as a
+conflict. Registration is therefore marshalled via `SendMessageTimeout`
+(`WM_APP_HOTKEY_REG`, mods in HIWORD, magic `HOTKEY_OK` back because
+`DefWindowProc`'s 0 must never read as success).
+
+## Popup behavior (backlog #5, revised 2026-09-06)
+
+Borderless (`overrideredirect`, no title/X — clicking elsewhere
+dismisses, so chrome is dead weight), pinned bottom-right, topmost.
+Dismiss choreography: clicking the **log viewer** keeps both windows;
+clicking the **dashboard** closes open log viewers (`FocusIn`); clicking
+**anywhere else** closes everything (`FocusOut` tree check + hide).
+Task/group editors open like the log viewer (measured size, left of
+the dashboard when it fits). All three are ONE popup class
+(`_track_popup`): clicking the dashboard closes them, clicking
+elsewhere closes everything, clicking one of them keeps all.
+
 ## Detached works (`"run": "detached"` — docker-logs model)
 
 The default for ALL works since 2026-09-06 (user moved the whole

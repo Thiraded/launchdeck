@@ -1,39 +1,52 @@
-# Status — current state and open gates (2026-09-06)
+# Status — current state and open gates (2026-09-06 evening)
 
 ## Live right now
 
-- hamster-server: RUNNING (relaunched by user after the full-close test).
-- omniroute-cli / omniroute-web: detection-positive only — their tokens
-  match a Brave tab URL, no killable tree (`dry_run` empty). Cosmetic;
-  do not "fix" by broadening tokens (see `kill-safety.md` rule 5).
-- No TUIs running (wc.py / wctray all closed for a clean slate).
-- hamster-clint / hamsterquest / mr-* / gpt-mcp: stopped.
+- hamster-clint: RUNNING (vite :5175, HTTP 200 — started through the
+  steps path after the setlocal fix; proves batless launch end-to-end).
+- hamster-server: state unknown since the morning full-close test --
+  check the dashboard dot before touching :3000 consumers.
+- wctray: RUNNING, but on pre-marshal code -- needs ONE more restart
+  to load the hotkey-marshal + borderless + popup-class build.
+- hamsterquest / mr-* / omniroute-* / gpt-mcp: stopped (never Started
+  on the steps path yet -- each first Start is still unverified live).
 
-## Verified working (human-confirmed)
+## Verified working
 
-- Kill closes the whole window (3-pass + WM_CLOSE), incl. the Clint
-  cases that used to leave zombie terminals.
-- Full-close drill: server + wctray pair terminated cleanly.
-- Go path: 12-38x faster scans, 0 content mismatches, guards hold
-  (no self, no Brave in kill sets).
+- Detached steps launch for all 8 works (config has no `bat` keys;
+  the files remain on disk, unused). Clint proven live (HTTP 200).
+- setlocal+npm cwd trap found by bisection (T1-T11) and fixed
+  (generated bats emit no `setlocal`); recorded in `bat-template.md`
+  and the launcher skill.
+- Log viewer: fresh log per Start, live 1s color follow, clickable
+  URLs, pinned beside the dashboard.
+- Dashboard: wheel scroll, borderless, focus choreography (viewer
+  clicks keep both, dashboard clicks kill popups, outside kills all),
+  task/group editors + settings in the same popup class.
+- Editor: inline steps/vars, group create/rename/delete, hotkey setting.
+- self-test: scroll/wheel, editors, slug, dismiss, hotkey parse +
+  marshal contract, borderless, popup class -- all PASS headless.
 
 ## Open gates (need a human at the keyboard)
 
-1. Start a work fresh -> `h` must find its window (hide-quality
-   gate: `2ed9c4a` regressed this; hide path reverted to
-   `new-version` shape).
-2. Stop -> window must vanish entirely.
-3. Headless case (running, no window) -> Stop + Start fresh.
-4. The original `wc.bat` smoke: Space -> `[X]`, Enter kills `[-]`,
-   Enter launches stopped (§8 standing gate).
-5. `test_wc_core.py` — blocked until no live works are running.
+1. Restart wctray -> Alt+W must toggle the dashboard (then the agent
+   marshal-probes the live tray window to confirm end-to-end).
+2. Start each stopped work once from the dashboard (server, quest,
+   unity, vscode, cli, web, mcp) -- first live boot on the steps path.
+3. The old standing gates (hide-quality, full-close, wc.bat smoke)
+   are PRE-detached doctrine -- hide/minimize no longer applies to
+   detached works. Needs a Docs decision (retire or re-scope), not a
+   keyboard drill.
+4. `test_wc_core.py` -- still blocked while live works run.
 
 ## Known issues (accepted, documented)
 
-- Pre-existing orphans (no tokens, default titles) can't be attributed
-  — never auto-touched. One known: invisible `cmd` from the PARK era.
-  Say the word and it's closed by HWND.
-- wc.py has no respawn sweep (wctray does) — a dev server forking a
-  fresh console after minimize leaves it visible.
-- WT-manual runs: window actions guarded out, process kill only.
-- `registry.json` churns at runtime (launch/hwnd tracking) — normal.
+- wctray uv-venv twin: TWO pythonw processes (parent+child) survive;
+  election should reap the younger but currently doesn't always.
+  Single tray window exists, so impact is limited to confusion --
+  investigate election next if it recurs.
+- `registry.json` churns at runtime (wctray rewrites it for hidden
+  tracking and can drop keys it didn't write) -- normal, never commit.
+- omniroute-cli/web detection-positive on Brave tab URLs (cosmetic;
+  do not "fix" by broadening tokens).
+- Pre-existing orphans (PARK-era invisible cmd) -- never auto-touched.

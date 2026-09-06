@@ -60,6 +60,11 @@ WM_USER = 0x0400
 WM_DESTROY = 0x0002
 WM_APP_SHUTDOWN = WM_USER + 0x31
 WM_COMMAND = 0x0111
+WM_HOTKEY = 0x0312
+WM_APP = 0x8000
+WM_APP_HOTKEY_REG = WM_APP + 0x21
+WM_APP_HOTKEY_UNREG = WM_APP + 0x22
+HOTKEY_OK = 0x51A7  # magic success for the hotkey marshal (0 is ambiguous)
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
 WM_CONTEXTMENU = 0x007B
@@ -479,6 +484,38 @@ def _wndproc(hwnd, msg, wparam, lparam):
     if msg == WM_DESTROY:
         user32.PostQuitMessage(0)
         return 0
+    if msg == WM_HOTKEY:
+        # Global hotkey (RegisterHotKey): wParam is our hotkey id.
+        handler = getattr(inst, "on_hotkey", None)
+        if callable(handler):
+            try:
+                handler(int(wparam))
+            except Exception as e:
+                _tray_log(f"[wndproc] on_hotkey failed: {e}")
+        return 0
+    if msg == WM_APP_HOTKEY_REG:
+        # Runs ON the tray thread (the window's owner): RegisterHotKey
+        # from any other thread fails with 1408, so all registration
+        # is marshalled here via SendMessageTimeout. lParam packs
+        # mods in HIWORD, vk in LOWORD. Returns HOTKEY_OK on success,
+        # a Win32 error otherwise (DefWindowProc's 0 must never read
+        # as success -- hence the magic, not a boolean).
+        try:
+            hid = int(wparam) & 0xFFFF
+            vk = int(lparam) & 0xFFFF
+            mods = (int(lparam) >> 16) & 0xFFFF
+            if user32.RegisterHotKey(hwnd, hid, mods, vk):
+                return HOTKEY_OK
+            return kernel32.GetLastError() or 1
+        except Exception:
+            return 1
+    if msg == WM_APP_HOTKEY_UNREG:
+        try:
+            if user32.UnregisterHotKey(hwnd, int(wparam) & 0xFFFF):
+                return HOTKEY_OK
+            return kernel32.GetLastError() or 1
+        except Exception:
+            return 1
     if msg == WM_COMMAND:
         # Menu item clicked: wParam low-word is the command id
         try:
@@ -488,6 +525,64 @@ def _wndproc(hwnd, msg, wparam, lparam):
             pass
         return 0
     return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+
+_HOTKEY_PROTO_SET = False
+
+SMTO_ABORTIFHUNG = 0x0002
+
+
+def _hotkey_proto():
+    """Prototypes for the hotkey marshal (SendMessageTimeout + direct)."""
+    global _HOTKEY_PROTO_SET
+    if _HOTKEY_PROTO_SET or not _HAVE_WIN:
+        return
+    try:
+        user32.SendMessageTimeoutW.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
+            ctypes.POINTER(ctypes.c_void_p)]
+        user32.SendMessageTimeoutW.restype = ctypes.c_void_p
+        user32.RegisterHotKey.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                          ctypes.c_uint, ctypes.c_uint]
+        user32.RegisterHotKey.restype = ctypes.c_int
+        user32.UnregisterHotKey.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.UnregisterHotKey.restype = ctypes.c_int
+        _HOTKEY_PROTO_SET = True
+    except Exception as e:
+        _tray_log(f"[hotkey] prototype setup failed: {e}")
+
+
+def _send_hotkey_msg(hwnd, msg, wparam, lparam):
+    """Marshal to the window's owner thread; True only on HOTKEY_OK."""
+    if not _HAVE_WIN or not hwnd:
+        return False
+    _hotkey_proto()
+    try:
+        out = ctypes.c_void_p()
+        sent = user32.SendMessageTimeoutW(
+            hwnd, msg, wparam, lparam, SMTO_ABORTIFHUNG, 2000,
+            ctypes.byref(out))
+        if not sent:
+            return False
+        return (out.value or 0) == HOTKEY_OK
+    except Exception:
+        return False
+
+
+def register_hotkey(hwnd, hid, mods, vk):
+    """Register a system-wide hotkey via the window's owner thread.
+
+    RegisterHotKey from any other thread fails with 1408, so this
+    marshals with SendMessageTimeout (2s, abort-if-hung): never hangs
+    the caller, False on dead window / real conflict / timeout.
+    """
+    return _send_hotkey_msg(hwnd, WM_APP_HOTKEY_REG, hid,
+                            ((mods & 0xFFFF) << 16) | (vk & 0xFFFF))
+
+
+def unregister_hotkey(hwnd, hid):
+    return _send_hotkey_msg(hwnd, WM_APP_HOTKEY_UNREG, hid, 0)
 
 
 class TrayIcon:

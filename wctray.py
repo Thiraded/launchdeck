@@ -31,6 +31,7 @@ from pathlib import Path
 
 import wc_core as core
 from wc_tray import TrayIcon, WM_LBUTTONUP, WM_RBUTTONUP, WM_CONTEXTMENU
+from wc_tray import register_hotkey, unregister_hotkey
 
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "wc_logs" / "wctray.log"
@@ -169,7 +170,7 @@ def self_test():
     ed = d.open_editor(w)
     d.root.update_idletasks()
     assert ed is not None and ed.winfo_exists(), "editor did not build"
-    ed.destroy()
+    d._close_popup(ed)
     print("self-test: editor (steps prefill) OK")
     man = core.load_manifest()
     assert core.slug_group_id("Hamster combo", man) != "hamstercombo"
@@ -177,12 +178,39 @@ def self_test():
     ged = d.open_group_editor(None)
     d.root.update_idletasks()
     assert ged is not None and ged.winfo_exists(), "group editor did not build"
-    ged.destroy()
+    d._close_popup(ged)
     print("self-test: group editor + slug OK")
     assert d.root.bind("<FocusOut>"), "popup dismiss binding missing (backlog #5)"
     d._maybe_autodismiss()  # hidden popup: must no-op, never raise
     assert d.visible is False
     print("self-test: popup dismiss wiring OK")
+    assert core.parse_hotkey("ctrl+alt+1") == (0x3, 0x31)
+    assert core.parse_hotkey("1") is None
+    assert core.parse_hotkey("ctrl+f24") == (0x2, 0x87)
+    assert core.canonical_hotkey("Ctrl + Alt + 1") == "ctrl+alt+1"
+    assert core.hotkey_conflicts(
+        {"works": [{"id": "a", "hotkey": "ctrl+alt+1"},
+                   {"id": "b", "hotkey": "ctrl+alt+1"}]}) == {"ctrl+alt+1": ["a", "b"]}
+    from wc_tray import register_hotkey as _rh, unregister_hotkey as _uh
+    hwnd = d.root.winfo_id()
+    # A tk window has no wc handler: DefWindowProc's 0 must read as a
+    # clean False (never a false-positive success).
+    assert _rh(hwnd, 65001, 0x3, 0x87) is False
+    assert _uh(hwnd, 65001) is False
+    print("self-test: hotkey parse + marshal contract OK")
+    assert d.root.overrideredirect(), "dashboard must be borderless"
+    lv = d.open_log_viewer(w)
+    d.root.update_idletasks()
+    assert lv is not None and lv in d._popups
+    st = d.open_settings()
+    d.root.update_idletasks()
+    assert st is not None and st in d._popups
+    assert len(d._popups) == 2
+    d._close_popups()
+    assert d._popups == [] and not lv.winfo_exists() and not st.winfo_exists()
+    d._ensure_hotkey()
+    assert not getattr(d, "_hotkey_on", False)
+    print("self-test: borderless + popup class + settings + hotkey ensure OK")
     d.root.destroy()
     print("SELF-TEST OK")
     return 0
@@ -366,7 +394,7 @@ def toggle_start_stop(work):
     else:
         rec = core.launch_work(work)
         if rec is None:
-            return f"cannot launch '{work.get('label')}' (bat missing?)"
+            return f"cannot launch '{work.get('label')}' (nothing runnable?)"
         return f"started '{work.get('label')}'"
 
 
@@ -397,6 +425,10 @@ class WorkTray(TrayIcon):
 
     def toggle_console(self):
         actions.put("toggle_ui")  # left-click -> dashboard popup
+
+    def on_hotkey(self, hid):
+        """Global Alt+W pressed anywhere -> toggle the dashboard."""
+        actions.put("toggle_ui")
 
     # parked work icons: wid -> {"uid": int, "hicon": handle}
 
@@ -573,6 +605,7 @@ class Dashboard:
         self.status_var = None
         self.list_frame = None
         self._canvas = None
+        self._popups = []
         self.visible = False
 
     def ensure(self):
@@ -580,6 +613,9 @@ class Dashboard:
             return
         r = tk.Tk()
         r.title("Works")
+        # Borderless popup (backlog #5): no title bar, no X -- clicking
+        # outside dismisses it, so chrome is dead weight.
+        r.overrideredirect(True)
         r.configure(bg=TH_BG)
         r.attributes("-topmost", True)
         r.resizable(False, False)
@@ -600,6 +636,8 @@ class Dashboard:
         th_button(top, text="+ Group",
                   command=lambda: self.open_group_editor(None),
                   width=8).pack(side="right", padx=(0, 6))
+        th_button(top, text="⌨", command=self.open_settings,
+                  width=3).pack(side="right", padx=(0, 6))
         self.status_var = tk.StringVar(value="")
         tk.Label(r, textvariable=self.status_var, fg="#E3B341", bg=TH_BG,
                  font=("Segoe UI", 9)).pack(fill="x", padx=12)
@@ -643,6 +681,9 @@ class Dashboard:
         # dashboard tree schedules a dismiss check (editors/dialogs are
         # child Toplevels, so focus inside them keeps us open).
         r.bind("<FocusOut>", lambda _e: r.after(150, self._maybe_autodismiss))
+        # Clicking the dashboard kills open log viewers (they belong to
+        # it); clicking elsewhere kills everything via _maybe_autodismiss.
+        r.bind("<FocusIn>", lambda _e: self._close_popups())
         self.root = r
         self.refresh()
         r.after(800, self._poll)
@@ -657,6 +698,11 @@ class Dashboard:
         elif action == "refresh":
             self.refresh()
         elif action == "quit":
+            try:
+                if tray_host is not None and getattr(tray_host, "hwnd", None):
+                    unregister_hotkey(tray_host.hwnd, 1)
+            except Exception:
+                pass
             try:
                 if tray_host is not None:
                     tray_host.stop()
@@ -679,6 +725,10 @@ class Dashboard:
             self.root.after(250, self._poll)
         except Exception:
             pass
+        # Global-hotkey self-heal (see _ensure_hotkey): cheap timer check.
+        if time.time() - getattr(self, "_last_hk", 0) > 15:
+            self._last_hk = time.time()
+            self._ensure_hotkey()
         # No-flicker refresh: rebuild ONLY when something actually changed
         # (running set, hidden set, or the manifest itself). Otherwise just
         # touch the cheap status line -- destroying + rebuilding the whole
@@ -723,6 +773,10 @@ class Dashboard:
 
     def hide(self):
         try:
+            self._close_popups()
+        except Exception:
+            pass
+        try:
             self.root.withdraw()
         except Exception:
             pass
@@ -746,6 +800,32 @@ class Dashboard:
         except Exception:
             pass
 
+    def _ensure_hotkey(self):
+        """Register the suite hotkey; self-heal on a timer (backlog #5).
+
+        Registration is marshalled to the tray (owner) thread -- a
+        direct call from here fails with 1408. Retries until registered;
+        silent while taken (no log spam); logs the grab once it lands.
+        """
+        if getattr(self, "_hotkey_on", False):
+            return
+        try:
+            if tray_host is None or not getattr(tray_host, "hwnd", None):
+                return
+            hk = core.canonical_hotkey(
+                core.get_settings(core.load_manifest()).get(
+                    "hotkey", core.DEFAULT_HOTKEY)) or core.DEFAULT_HOTKEY
+            parsed = core.parse_hotkey(hk)
+            if not parsed:
+                return
+            mods, vk = parsed
+            if register_hotkey(tray_host.hwnd, 1, mods, vk):
+                self._hotkey_on = True
+                log(f"global hotkey {hk} registered")
+                self.say(f"hotkey {hk} on")
+        except Exception as e:
+            log(f"hotkey ensure failed: {e}")
+
     def _maybe_autodismiss(self):
         """Dismiss when focus leaves the whole dashboard tree (backlog #5).
 
@@ -767,6 +847,54 @@ class Dashboard:
                 self.hide()
         except Exception:
             pass
+
+    def _close_popup(self, win):
+        try:
+            if win in self._popups:
+                self._popups.remove(win)
+        except Exception:
+            pass
+        try:
+            if win.winfo_exists():
+                win.destroy()
+        except Exception:
+            pass
+
+    def _close_popups(self):
+        wins, self._popups = list(self._popups), []
+        for w in wins:
+            try:
+                if w.winfo_exists():
+                    w.destroy()
+            except Exception:
+                pass
+
+    def _track_popup(self, win):
+        """One popup class: log viewers AND editors share tracking,
+        tray-side positioning, and the dashboard-click dismiss rule."""
+        self._popups.append(win)
+        win.protocol("WM_DELETE_WINDOW",
+                     lambda w=win: self._close_popup(w))
+
+        def _focus_out(_e, w=win):
+            def _check():
+                try:
+                    if not w.winfo_exists():
+                        return
+                    try:
+                        focus = w.focus_displayof()
+                    except Exception:
+                        focus = None
+                    # Focus left for the dashboard -> its FocusIn closes
+                    # us; focus left the app -> close ourselves now.
+                    if focus is None or not str(focus).startswith(str(self.root)):
+                        self._close_popup(w)
+                except Exception:
+                    pass
+            win.after(150, _check)
+
+        win.bind("<FocusOut>", _focus_out)
+        return win
 
     def say(self, msg):
         try:
@@ -928,6 +1056,7 @@ class Dashboard:
             win.transient(self.root)
         except Exception:
             pass
+        self._track_popup(win)
         txt = tk.Text(win, wrap="none", bg="#1e1e1e", fg="#d4d4d4",
                       insertbackground="#d4d4d4", selectbackground="#264f78")
         txt.pack(fill="both", expand=True)
@@ -994,6 +1123,7 @@ class Dashboard:
         tk.Label(bar, text=path).pack(side="left", padx=8)
         _full_load()
         win.after(1000, _follow)
+        return win
 
     def _act_run(self, w):
         self._act_async(lambda: toggle_start_stop(w), "working…")
@@ -1135,6 +1265,14 @@ class Dashboard:
 
         th_button(win, text="Save", command=save, width=14,
                   accent=True).grid(row=2, column=1, pady=10)
+        try:
+            win.update_idletasks()
+            sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
+                                  min(win.winfo_reqheight(), sh - 120))
+        except Exception:
+            pass
+        self._track_popup(win)
         return win
 
     def delete_group(self, group):
@@ -1150,6 +1288,65 @@ class Dashboard:
             self.refresh(quiet=True)
         except Exception as e:
             messagebox.showerror("Delete failed", str(e))
+
+    # -- settings (suite hotkey) ------------------------------------------
+    def open_settings(self):
+        manifest = core.load_manifest()
+        current = core.get_settings(manifest).get("hotkey", core.DEFAULT_HOTKEY)
+        win = tk.Toplevel(self.root)
+        win.title("Settings")
+        win.attributes("-topmost", True)
+        win.resizable(False, False)
+        win.configure(bg=TH_BG)
+        tk.Label(win, text="Global hotkey (modifiers + key):", bg=TH_BG,
+                 fg=TH_FG).grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        ent = tk.Entry(win, width=24, relief="flat", bd=4,
+                       bg=TH_FIELD, fg="white", insertbackground="white")
+        ent.grid(row=0, column=1, padx=8, pady=6)
+        ent.insert(0, current)
+
+        def save():
+            hk = core.canonical_hotkey(ent.get().strip())
+            if not hk:
+                messagebox.showwarning("Bad hotkey",
+                                       "Use modifiers + key, e.g. alt+w "
+                                       "(keys: 0-9, a-z, f1-f24).")
+                return
+            man = core.load_manifest()
+            st = core.get_settings(man)
+            st["hotkey"] = hk
+            man["settings"] = st
+            try:
+                core.save_manifest(man)
+            except Exception as e:
+                messagebox.showerror("Save failed", str(e))
+                return
+            try:
+                if tray_host is not None and getattr(tray_host, "hwnd", None):
+                    unregister_hotkey(tray_host.hwnd, 1)
+            except Exception:
+                pass
+            self._hotkey_on = False
+            self._ensure_hotkey()
+            if getattr(self, "_hotkey_on", False):
+                self.say(f"hotkey {hk} on")
+            else:
+                self.say(f"hotkey {hk} saved -- taken, grabs when free")
+                log(f"hotkey {hk} taken at settings save")
+            win.destroy()
+            self.refresh(quiet=True)
+
+        th_button(win, text="Save", command=save, width=14,
+                  accent=True).grid(row=1, column=1, pady=10)
+        try:
+            win.update_idletasks()
+            sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
+                                  min(win.winfo_reqheight(), sh - 120))
+        except Exception:
+            pass
+        self._track_popup(win)
+        return win
 
     # -- config editor ----------------------------------------------------
     def open_editor(self, work=None):
@@ -1305,6 +1502,14 @@ class Dashboard:
 
         th_button(win, text="Save", command=save, width=14,
                   accent=True).grid(row=10, column=1, pady=10)
+        try:
+            win.update_idletasks()
+            sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
+                                  min(win.winfo_reqheight(), sh - 120))
+        except Exception:
+            pass
+        self._track_popup(win)
         return win
 
 
@@ -1333,6 +1538,7 @@ def main():
         rp.start()
         dash = Dashboard()
         dash.ensure()
+        dash._ensure_hotkey()
         log("wctray ready (tray + dashboard up)")
 
         dash.show()  # visible on startup: proves life, teaches where it lives
