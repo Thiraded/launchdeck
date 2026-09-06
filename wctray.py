@@ -172,12 +172,27 @@ def self_test():
     assert ed is not None and ed.winfo_exists(), "editor did not build"
     d._close_popup(ed)
     print("self-test: editor (steps prefill) OK")
+    ed0 = d.open_editor(None)
+    d.root.update_idletasks()
+    assert ed0 is not None and ed0.winfo_exists(), "new-task editor (fork) did not build"
+    d._close_popup(ed0)
+    man0 = core.load_manifest()
+    f = _work_to_form(man0["works"][0], man0)
+    assert f["label"].endswith(" copy")
+    assert f["match"] == str(man0["works"][0].get("match", "") or "")
+    assert f["steps"] == core.steps_to_text(man0["works"][0].get("steps") or [])
+    print("self-test: fork prefill OK")
     man = core.load_manifest()
     assert core.slug_group_id("Hamster combo", man) != "hamstercombo"
     assert core.slug_group_id("New Group", man) == "g-new-group"
     ged = d.open_group_editor(None)
     d.root.update_idletasks()
     assert ged is not None and ged.winfo_exists(), "group editor did not build"
+    _found, _i = [ged], 0
+    while _i < len(_found):
+        _found.extend(_found[_i].winfo_children())
+        _i += 1
+    assert any(isinstance(_x, tk.Listbox) for _x in _found), "group editor needs the order list"
     d._close_popup(ged)
     print("self-test: group editor + slug OK")
     assert d.root.bind("<FocusOut>"), "popup dismiss binding missing (backlog #5)"
@@ -211,6 +226,76 @@ def self_test():
     d._ensure_hotkey()
     assert not getattr(d, "_hotkey_on", False)
     print("self-test: borderless + popup class + settings + hotkey ensure OK")
+    assert _apply_palette("light") == "light"
+    assert TH_BG == PALETTES["light"]["BG"]
+    _apply_palette("dark")
+    assert TH_BG == PALETTES["dark"]["BG"]
+    print("self-test: theme palettes roundtrip OK")
+    sh, _sbody = d._popup_shell("test shell")
+    d.root.update_idletasks()
+    assert sh.overrideredirect() and sh.winfo_exists(), "popup shell must be borderless"
+    d._close_popup(sh)
+    assert not sh.winfo_exists()
+    print("self-test: borderless popup shell + close OK")
+    cb = th_circle_btn(d.root, "▶", lambda: None, style="accent")
+    assert len(cb.find_all()) == 2, "circle button must be oval+glyph"
+    assert cb.cget("cursor") == "hand2"
+    assert hasattr(cb, "recolor")
+    cb.destroy()
+    print("self-test: circle button OK")
+    w = next(x for x in manifest["works"] if x.get("id") == "hamster-clint")
+    lv = d.open_log_viewer(w)
+    assert lv is not None and d._log_wins.get("hamster-clint") is lv
+    assert d.open_log_viewer(w) is None  # toggle: second click closes
+    assert "hamster-clint" not in d._log_wins and not lv.winfo_exists()
+    print("self-test: log toggle (open/close, no duplicates) OK")
+    d._pending["x-test"] = {"state": "starting", "expect": True,
+                            "until": time.monotonic() + 20}
+    d._act_run({"id": "x-test", "label": "X-Test"})
+    assert d._pending.get("x-test", {}).get("state") == "starting", "guard must not clear pending"
+    assert "already starting" in d.status_var.get()
+    d._pending.pop("x-test", None)
+    print("self-test: pending double-click guard OK")
+    v = _row_view({"id": "a", "label": "A"}, set(), {})
+    assert (v["sub"], v["icon_c"], v["running"]) == ("stopped", TH_DIM, False)
+    v = _row_view({"id": "a", "label": "A"}, {"a"}, {})
+    assert (v["sub"], v["icon_c"], v["running"]) == ("running", TH_GREEN, True)
+    v = _row_view({"id": "a", "label": "A"}, set(),
+                  {"a": {"state": "starting", "expect": True, "until": 0}})
+    assert (v["sub"], v["sub_c"]) == ("starting…", TH_ACCENT)
+    print("self-test: row view-model OK")
+    d.refresh()
+    f1 = {k: r["frame"] for k, r in d._rows.items()}
+    d.refresh()
+    f2 = {k: r["frame"] for k, r in d._rows.items()}
+    assert f1 and f1 == f2, "same layout must update in place (no rebuild)"
+    print("self-test: in-place refresh OK")
+    assert _swap_adjacent(["a", "b", "c"], "b", -1) == ["b", "a", "c"]
+    assert _swap_adjacent(["a", "b", "c"], "b", +1) == ["a", "c", "b"]
+    assert _swap_adjacent(["a", "b", "c"], "a", -1) == ["a", "b", "c"]
+    assert _swap_adjacent(["a", "b", "c"], "c", +1) == ["a", "b", "c"]
+    assert _swap_adjacent(["a"], "a", +1) == ["a"]
+    raw = core.MANIFEST.read_text(encoding="utf-8")
+    try:
+        w0 = core.load_manifest()["works"][0]
+        n0 = len(core.load_manifest()["works"])
+        d._duplicate_work(w0)
+        man1 = core.load_manifest()
+        assert len(man1["works"]) == n0 + 1
+        ids1 = [x["id"] for x in man1["works"]]
+        at = ids1.index(w0["id"])
+        got = man1["works"][at + 1]
+        assert got["label"].endswith(" copy") and got["id"] != w0["id"]
+        assert {k: v for k, v in got.items() if k not in ("id", "label")} == \
+               {k: v for k, v in w0.items() if k not in ("id", "label")}
+    finally:
+        core.MANIFEST.write_text(raw, encoding="utf-8")
+        d.refresh()
+    print("self-test: duplicate (+byte-exact restore) OK")
+    src = Path(__file__).read_text(encoding="utf-8")
+    assert 'man["works"]' + '.sort' not in src, \
+        "editor save must not re-sort (custom order)"
+    print("self-test: custom-order swap + no-autosort OK")
     d.root.destroy()
     print("SELF-TEST OK")
     return 0
@@ -218,30 +303,218 @@ def self_test():
 ICON_CHOICES = ["\u26a1", "\U0001f5a5", "\U0001f3ae", "\U0001f310", "\U0001f4e6", "\U0001f680", "\U0001f527", "\U0001f3a8", "\U0001f916", "\U0001f4be", "\U0001f4dd", "\U0001f3b5"]
 DOT_ON, DOT_OFF = "🟢", "⚪"
 
-# -- dark PowerToys-style theme (stdlib tk only, no deps) --------------------
-TH_BG = "#1E2126"        # window
-TH_CARD = "#2A2E35"      # work card
-TH_FIELD = "#3C4043"     # entries
-TH_FG = "#E8EAED"        # text
-TH_DIM = "#9AA0A6"       # secondary text
-TH_ACCENT = "#4C8DFF"    # primary buttons / highlights
-TH_ACCENT_HI = "#5A9BFF"
-TH_BTN = "#3A3F47"       # secondary buttons
-TH_BTN_HI = "#4A5058"
-TH_GREEN = "#3FB950"
-TH_GRAY = "#6B7280"
+# -- themes (stdlib tk only, no deps) -----------------------------------------
+# tkinter can't do rounded corners or shadows, so hierarchy comes from
+# spacing + hairlines + ONE accent. Blue = primary action only, red =
+# destructive only, everything else quiet gray. The log viewer stays dark
+# in both themes (server logs assume a dark console).
+PALETTES = {
+    "dark": {
+        "BG": "#15171C", "CARD": "#1F232B", "CARD_EDGE": "#2E3542",
+        "FIELD": "#2A303B", "INPUT_FG": "#FFFFFF",
+        "FG": "#EDEFF2", "DIM": "#8F97A5", "FAINT": "#5D6572",
+        "ACCENT": "#3E7BFA", "ACCENT_HI": "#5B92FF",
+        "BTN": "#2A303B", "BTN_HI": "#374052",
+        "DANGER": "#E5534B", "DANGER_HI": "#F1655C",
+        "GREEN": "#3FB950", "GRAY": "#596069",
+    },
+    "light": {
+        "BG": "#E9ECF1", "CARD": "#FFFFFF", "CARD_EDGE": "#D4DAE3",
+        "FIELD": "#E2E7EE", "INPUT_FG": "#1A1D21",
+        "FG": "#1B1E23", "DIM": "#5C6470", "FAINT": "#8A93A0",
+        "ACCENT": "#2F6BEE", "ACCENT_HI": "#3E7BFA",
+        "BTN": "#E0E5EC", "BTN_HI": "#CFD6E0",
+        "DANGER": "#D92D20", "DANGER_HI": "#B42318",
+        "GREEN": "#1A7F37", "GRAY": "#A6AEB9",
+    },
+}
+_TH_KEYS = ("BG", "CARD", "CARD_EDGE", "FIELD", "INPUT_FG", "FG", "DIM",
+            "FAINT", "ACCENT", "ACCENT_HI", "BTN", "BTN_HI", "DANGER",
+            "DANGER_HI", "GREEN", "GRAY")
+
+
+def _apply_palette(name):
+    """Point the TH_* globals at a palette. Widgets read them at build
+    time, so a theme switch = apply + full rebuild (see _rebuild)."""
+    pal = PALETTES.get(name, PALETTES["dark"])
+    g = globals()
+    for k in _TH_KEYS:
+        g["TH_" + k] = pal[k]
+    return name if name in PALETTES else "dark"
+
+
+_apply_palette("dark")
 TH_FONT = ("Segoe UI", 10)
 TH_FONT_B = ("Segoe UI", 10, "bold")
 TH_FONT_S = ("Segoe UI", 8)
+TH_FONT_TITLE = ("Segoe UI", 13, "bold")
+TH_FONT_SECTION = ("Segoe UI", 10, "bold")
 
 
-def th_button(parent, text, command, width=8, accent=False):
-    return tk.Button(parent, text=text, command=command, width=width,
-                     font=("Segoe UI", 9), relief="flat", bd=0, padx=8, pady=3,
-                     cursor="hand2",
-                     bg=TH_ACCENT if accent else TH_BTN, fg="white",
-                     activebackground=TH_ACCENT_HI if accent else TH_BTN_HI,
-                     activeforeground="white")
+def th_button(parent, text, command, width=8, accent=False, style=None):
+    """Themed button. style: None (secondary) | 'accent' | 'ghost' | 'danger'.
+
+    `accent=True` is shorthand for style='accent' (kept for old call sites).
+    Ghost/danger blend into the parent surface (dim text, no box) so the
+    primary action is the only thing that shouts; hover still fills.
+    """
+    if accent:
+        style = "accent"
+    try:
+        parent_bg = parent.cget("bg")
+    except Exception:
+        parent_bg = TH_CARD
+    bg, abg, fg = TH_BTN, TH_BTN_HI, TH_FG
+    if style == "accent":
+        bg, abg, fg = TH_ACCENT, TH_ACCENT_HI, "white"
+    elif style == "ghost":
+        bg, abg, fg = parent_bg, TH_BTN_HI, TH_DIM
+    elif style == "danger":
+        bg, abg, fg = parent_bg, TH_DANGER, TH_DANGER
+    b = tk.Button(parent, text=text, command=command, width=width,
+                  font=("Segoe UI", 9), relief="flat", bd=0, padx=8, pady=3,
+                  cursor="hand2", bg=bg, fg=fg,
+                  activebackground=abg, activeforeground="white")
+    if style == "ghost":
+        b.bind("<Enter>", lambda _e, w=b: w.config(fg=TH_FG))
+        b.bind("<Leave>", lambda _e, w=b: w.config(fg=TH_DIM))
+    return b
+
+
+def th_circle_btn(parent, glyph, command, style=None, size=24, font_size=10):
+    """Circular icon button, snug around the glyph (tk has no round Button).
+
+    A small Canvas blended into the parent: oval fill + centered glyph.
+    styles: None (secondary fill) | 'accent' | 'danger' | 'ghost'.
+    Hover fills; hand cursor throughout. All icon-only actions share
+    `size`, so clusters line up exactly.
+    """
+    try:
+        parent_bg = parent.cget("bg")
+    except Exception:
+        parent_bg = TH_CARD
+    fill, hover, fg = TH_BTN, TH_BTN_HI, TH_FG
+    if style == "accent":
+        fill, hover, fg = TH_ACCENT, TH_ACCENT_HI, "white"
+    elif style == "danger":
+        fill, hover, fg = parent_bg, TH_DANGER, TH_DANGER
+    elif style == "ghost":
+        fill, hover, fg = parent_bg, TH_BTN_HI, TH_DIM
+    c = tk.Canvas(parent, width=size, height=size, highlightthickness=0,
+                  bd=0, bg=parent_bg, cursor="hand2")
+    oval = c.create_oval(2, 2, size - 2, size - 2, fill=fill, outline="")
+    txt = c.create_text(size // 2, size // 2 - 1, text=glyph,
+                        font=("Segoe UI", font_size), fill=fg)
+    c._oval, c._txt = oval, txt  # for in-place updates (no rebuild)
+    st = {"fill": fill, "hover": hover, "fg": fg, "style": style}
+
+    def recolor(fill=None, hover=None, fg=None):
+        """Restyle a live circle (state flip without rebuilding the row)."""
+        if fill is not None:
+            st["fill"] = fill
+        if hover is not None:
+            st["hover"] = hover
+        if fg is not None:
+            st["fg"] = fg
+        c.itemconfig(oval, fill=st["fill"])
+        c.itemconfig(txt, fill=st["fg"])
+
+    c.recolor = recolor
+
+    def _enter(_e):
+        c.itemconfig(oval, fill=st["hover"])
+        c.itemconfig(txt, fill="white" if st["style"] in ("danger", "accent")
+                     else TH_FG)
+
+    def _leave(_e):
+        c.itemconfig(oval, fill=st["fill"])
+        c.itemconfig(txt, fill=st["fg"])
+
+    c.bind("<Enter>", _enter)
+    c.bind("<Leave>", _leave)
+    c.bind("<Button-1>", lambda _e: command())
+    return c
+
+
+def _short(text, n=22):
+    """Truncate a row title so the status + icon cluster keep their room."""
+    text = str(text)
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def _swap_adjacent(ids, wid, direction):
+    """Move wid one step in an id list; no-op at the edges. Pure."""
+    ids = list(ids)
+    if wid not in ids:
+        return ids
+    i, j = ids.index(wid), ids.index(wid) + direction
+    if j < 0 or j >= len(ids):
+        return ids
+    ids[i], ids[j] = ids[j], ids[i]
+    return ids
+
+
+def _row_view(w, run, pending):
+    """Pure view-model for one row (headless-testable, no widgets).
+
+    Returns dict: running, hidden, icon, icon_c, sub, sub_c.
+    """
+    wid = w.get("id", "")
+    running = wid in run
+    icon = w.get("icon", "⚡")
+    hidden = core.is_work_hidden(w)
+    pend = (pending or {}).get(wid)
+    if pend:
+        state = pend.get("state", "")
+        return {"running": running, "hidden": hidden, "icon": icon,
+                "icon_c": TH_ACCENT, "sub": state + "…", "sub_c": TH_ACCENT}
+    if w.get("run") == "detached" and running:
+        sub = "running · no window — see log"
+    else:
+        sub = "running" if running else "stopped"
+    if hidden:
+        sub += "  ·  hidden"
+    return {"running": running, "hidden": hidden, "icon": icon,
+            "icon_c": TH_GREEN if running else TH_DIM,
+            "sub": sub, "sub_c": TH_DIM}
+
+
+def _work_to_form(src, manifest):
+    """Prefill values for the task editor when forking src (pure).
+
+    Label gets " copy" so the save path mints a fresh id instead of
+    overwriting the source. Group is the editor's display string.
+    """
+    disp = "(none — standalone)"
+    for g in manifest.get("groups", []):
+        if src.get("id") in g.get("members", []):
+            disp = f"{g.get('label')} [{g.get('id')}]"
+            break
+    return {"label": (src.get("label", "") or "") + " copy",
+            "bat": src.get("bat", "") or "",
+            "match": str(src.get("match", "") or ""),
+            "icon": src.get("icon", "⚡") or "⚡",
+            "group": disp,
+            "detect": bool(src.get("detect", True)),
+            "steps": core.steps_to_text(src.get("steps") or []),
+            "vars": core.vars_to_text(src.get("vars") or {})}
+
+
+def dashboard_theme():
+    """Active theme name from manifest settings (settings.theme)."""
+    try:
+        t = core.get_settings(core.load_manifest()).get("theme", "dark")
+    except Exception:
+        t = "dark"
+    return t if t in PALETTES else "dark"
+
+
+def dashboard_compact():
+    """Single-line rows? From manifest settings (settings.compact)."""
+    try:
+        return bool(core.get_settings(core.load_manifest()).get("compact", True))
+    except Exception:
+        return True
 
 
 def log(msg):
@@ -260,6 +533,9 @@ _running: set = set()
 _lock = threading.Lock()
 _prev_running: set = set()
 actions = queue.Queue()  # tray thread -> tk thread requests ("toggle_ui", ...)
+# Woken by the tk thread after every action so the monitor re-scans NOW
+# instead of at the next 3s tick (stale cache + refresh = white flash).
+_rescan = threading.Event()
 
 tray_host = None  # the live WorkTray, set by main() for park/unpark wiring
 
@@ -302,7 +578,8 @@ def monitor_loop(tray, notify_new=True):
             _prev_running = s
         except Exception as e:
             log(f"monitor: {e}")
-        time.sleep(3.0)
+        _rescan.wait(3.0)  # periodic tick, or instant when an action lands
+        _rescan.clear()
 
 
 # --------------------------------------------------------------------------
@@ -607,10 +884,20 @@ class Dashboard:
         self._canvas = None
         self._popups = []
         self.visible = False
+        self._gen = 0  # bumped by _rebuild so the old _poll retires
+        # wid -> {"state", "expect" (running? True/False/None), "until"}.
+        # Start/stop marks clear only when the live snapshot CONFIRMS
+        # them (or times out) -- never on a stale cache (white flash).
+        self._pending = {}
+        self._log_wins = {}  # wid -> open log viewer (toggle, never duplicates)
+        self._rows = {}  # wid -> live row widgets (in-place refresh)
+        self._group_heads = {}  # gid -> LabelFrame (count text updates)
+        self._struct_sig = None  # layout key: full rebuild only on change
 
     def ensure(self):
         if self.root is not None:
             return
+        _apply_palette(dashboard_theme())
         r = tk.Tk()
         r.title("Works")
         # Borderless popup (backlog #5): no title bar, no X -- clicking
@@ -621,26 +908,29 @@ class Dashboard:
         r.resizable(False, False)
         try:
             sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-            W, H = 400, 600
+            W, H = 480, 600
             r.geometry(f"{W}x{H}+{sw - W - 16}+{sh - H - 60}")
         except Exception:
             pass
+        # Brand hairline: 2px accent strip, the only saturated thing
+        # besides the primary buttons (borderless popup has no chrome).
+        tk.Frame(r, bg=TH_ACCENT, height=2).pack(fill="x")
         top = tk.Frame(r, bg=TH_BG)
-        top.pack(fill="x", padx=12, pady=(12, 4))
-        tk.Label(top, text="⚡ Works", font=("Segoe UI", 14, "bold"),
-                 bg=TH_BG, fg="white").pack(side="left")
-        th_button(top, text="+ New Task", command=self.open_editor,
-                  width=10, accent=True).pack(side="right")
-        th_button(top, text="⟳", command=self.refresh,
-                  width=3).pack(side="right", padx=(0, 6))
+        top.pack(fill="x", padx=14, pady=(12, 2))
+        tk.Label(top, text="Works", font=TH_FONT_TITLE,
+                 bg=TH_BG, fg=TH_FG).pack(side="left")
+        th_button(top, text="+ New", command=self.open_editor,
+                  width=8, accent=True).pack(side="right")
         th_button(top, text="+ Group",
                   command=lambda: self.open_group_editor(None),
-                  width=8).pack(side="right", padx=(0, 6))
-        th_button(top, text="⌨", command=self.open_settings,
-                  width=3).pack(side="right", padx=(0, 6))
+                  width=8).pack(side="right", padx=(0, 4))
+        th_circle_btn(top, "⌨", command=self.open_settings,
+                      style="ghost").pack(side="right", padx=(0, 4))
+        th_circle_btn(top, "⟳", command=self.refresh,
+                      style="ghost").pack(side="right", padx=(0, 4))
         self.status_var = tk.StringVar(value="")
-        tk.Label(r, textvariable=self.status_var, fg="#E3B341", bg=TH_BG,
-                 font=("Segoe UI", 9)).pack(fill="x", padx=12)
+        tk.Label(r, textvariable=self.status_var, fg=TH_DIM, bg=TH_BG,
+                 font=("Segoe UI", 9)).pack(fill="x", padx=14, pady=(0, 2))
         body = tk.Frame(r, bg=TH_BG)
         body.pack(fill="both", expand=True, padx=12, pady=4)
         canvas = tk.Canvas(body, highlightthickness=0, bg=TH_BG)
@@ -668,13 +958,13 @@ class Dashboard:
                     lambda ev, cv=canvas: cv.itemconfig("listwin",
                                                         width=ev.width))
         bot = tk.Frame(r, bg=TH_BG)
-        bot.pack(fill="x", padx=12, pady=(4, 12))
-        th_button(bot, text="Open works.json",
+        bot.pack(fill="x", padx=14, pady=(4, 12))
+        th_button(bot, text="works.json",
                   command=lambda: os.startfile(str(core.MANIFEST)),
-                  width=15).pack(side="left")
-        th_button(bot, text="Quit tray",
+                  width=12, style="ghost").pack(side="left")
+        th_button(bot, text="Quit",
                   command=lambda: actions.put("quit"),
-                  width=10).pack(side="right")
+                  width=8, style="ghost").pack(side="right")
         r.withdraw()
         r.protocol("WM_DELETE_WINDOW", self.hide)
         # Real-popup behavior (backlog #5): any focus leaving the whole
@@ -712,6 +1002,7 @@ class Dashboard:
             log(f"unknown action: {action!r}")
 
     def _poll(self):
+        gen = getattr(self, "_gen", 0)
         while True:
             try:
                 action = actions.get_nowait()
@@ -721,6 +1012,8 @@ class Dashboard:
                 self._handle_action(action)
             except Exception as e:
                 log(f"action {action!r} failed: {e}")
+        if gen != getattr(self, "_gen", 0):
+            return  # rebuilt since: the new tree runs its own poll
         try:
             self.root.after(250, self._poll)
         except Exception:
@@ -733,6 +1026,11 @@ class Dashboard:
         # (running set, hidden set, or the manifest itself). Otherwise just
         # touch the cheap status line -- destroying + rebuilding the whole
         # list every 3s is what made it blink.
+        if self.visible:
+            try:
+                self._sweep_pending()  # confirm transitional marks in place
+            except Exception:
+                pass
         now = time.time()
         if self.visible and now - getattr(self, "_last", 0) > 3:
             self._last = now
@@ -761,6 +1059,10 @@ class Dashboard:
 
     def show(self):
         self.ensure()
+        try:
+            self._sweep_pending()  # drop stale marks before first paint
+        except Exception:
+            pass
         self.refresh()
         self._place_near_tray()
         self.root.deiconify()
@@ -782,7 +1084,7 @@ class Dashboard:
             pass
         self.visible = False
 
-    def _place_near_tray(self, win=None, W=400, H=600):
+    def _place_near_tray(self, win=None, W=480, H=600):
         """Pin a window bottom-right (taskbar/resolution may have moved).
 
         The dashboard pins to the corner; secondary windows (log viewer)
@@ -848,7 +1150,17 @@ class Dashboard:
         except Exception:
             pass
 
+    def _forget_win(self, win):
+        """Close a popup AND drop its log-viewer registration (toggle-off)."""
+        for k, v in list(self._log_wins.items()):
+            if v is win:
+                self._log_wins.pop(k, None)
+        self._close_popup(win)
+
     def _close_popup(self, win):
+        for k, v in list(self._log_wins.items()):
+            if v is win:
+                self._log_wins.pop(k, None)
         try:
             if win in self._popups:
                 self._popups.remove(win)
@@ -861,6 +1173,8 @@ class Dashboard:
             pass
 
     def _close_popups(self):
+        for k, v in list(self._log_wins.items()):
+            self._log_wins.pop(k, None)
         wins, self._popups = list(self._popups), []
         for w in wins:
             try:
@@ -896,6 +1210,89 @@ class Dashboard:
         win.bind("<FocusOut>", _focus_out)
         return win
 
+    @staticmethod
+    def _draggable(win, *handles):
+        """Click-drag a borderless popup by its header (no title bar)."""
+        pos = {}
+
+        def _down(ev):
+            pos["x"], pos["y"] = ev.x_root, ev.y_root
+            try:
+                pos["gx"], pos["gy"] = win.winfo_x(), win.winfo_y()
+            except Exception:
+                pos["gx"], pos["gy"] = 0, 0
+
+        def _move(ev):
+            try:
+                win.geometry(f"+{pos['gx'] + ev.x_root - pos['x']}"
+                             f"+{pos['gy'] + ev.y_root - pos['y']}")
+            except Exception:
+                pass
+
+        for h in handles:
+            h.bind("<ButtonPress-1>", _down)
+            h.bind("<B1-Motion>", _move)
+
+    def _popup_shell(self, title):
+        """Borderless popup: hairline edge + custom header (title + ×).
+
+        All dashboard popups (log viewer, editors, settings) share this --
+        no OS title bar anywhere. Returns (win, body): build content in
+        body. The × has a hand cursor and closes via _close_popup.
+        """
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.configure(bg=TH_CARD_EDGE)
+        win.attributes("-topmost", True)
+        win.resizable(False, False)
+        outer = tk.Frame(win, bg=TH_BG)
+        outer.pack(fill="both", expand=True, padx=1, pady=1)
+        head = tk.Frame(outer, bg=TH_BG)
+        head.pack(fill="x", padx=10, pady=(8, 2))
+        ttl = tk.Label(head, text=title, font=TH_FONT_B,
+                       bg=TH_BG, fg=TH_FG)
+        ttl.pack(side="left")
+        th_circle_btn(head, "×", lambda: self._close_popup(win),
+                      style="ghost").pack(side="right")
+        self._draggable(win, head, ttl)
+        body = tk.Frame(outer, bg=TH_BG)
+        body.pack(fill="both", expand=True, padx=10, pady=(2, 10))
+        return win, body
+
+    def _rebuild(self):
+        """Destroy + rebuild the popup (theme switch). Restarts _poll.
+
+        Open popups belong to the old root and close with it -- the
+        settings window that triggered this included, so call it LAST
+        in the save handler.
+        """
+        was = self.visible
+        self._gen = getattr(self, "_gen", 0) + 1  # retire the old _poll
+        try:
+            self._close_popups()
+        except Exception:
+            pass
+        try:
+            if self.root is not None:
+                self.root.destroy()
+        except Exception:
+            pass
+        self.root = None
+        self.status_var = None
+        self.list_frame = None
+        self._canvas = None
+        self._popups = []
+        self._pending = {}
+        self._log_wins = {}
+        self._rows = {}
+        self._group_heads = {}
+        self._struct_sig = None
+        self._last_sig = None
+        self.visible = False
+        self.ensure()  # re-applies the palette + schedules a fresh _poll
+        if was:
+            self.show()
+
     def say(self, msg):
         try:
             self.status_var.set(msg)
@@ -905,86 +1302,197 @@ class Dashboard:
     def refresh(self, quiet=False):
         if self.root is None:
             return
-        for ch in self.list_frame.winfo_children():
-            ch.destroy()
         manifest = core.load_manifest()
         run = running_snapshot()
         by_id = {w.get("id"): w for w in manifest.get("works", [])}
         shown = set()
 
-        def work_row(parent, w):
-            wid = w.get("id", "")
-            shown.add(wid)
-            running = wid in run
-            icon = w.get("icon", "⚡")
-            hidden = core.is_work_hidden(w)
-            dot_c = TH_GREEN if running else TH_GRAY
-            if w.get("run") == "detached" and running:
-                sub = "running · detached (no window)"
-            else:
-                sub = "running" if running else "stopped"
-            if hidden:
-                sub += "  ·  hidden"
-            row = tk.Frame(parent, bg=TH_CARD, padx=2, pady=2,
-                           highlightbackground="#3A3F47", highlightthickness=1)
-            row.pack(fill="x", pady=3, padx=2)
-            topl = tk.Frame(row, bg=TH_CARD)
-            topl.pack(fill="x", padx=8, pady=(6, 0))
-            tk.Label(topl, text="\u25cf", fg=dot_c, bg=TH_CARD,
-                     font=("Segoe UI", 11)).pack(side="left")
-            tk.Label(topl, text=f" {icon} {w.get('label', wid)}",
-                     font=TH_FONT_B, bg=TH_CARD, fg=TH_FG).pack(side="left")
-            tk.Label(row, text=sub, font=TH_FONT_S,
-                     bg=TH_CARD, fg=TH_DIM).pack(anchor="w", padx=28)
-            btns = tk.Frame(row, bg=TH_CARD)
-            btns.pack(fill="x", padx=8, pady=(4, 6))
-            th_button(btns, "Stop" if running else "Start",
-                      lambda w=w: self._act_run(w),
-                      width=8, accent=not running).pack(side="left")
+        compact = dashboard_compact()
+        # Layout key: state flips update rows IN PLACE (no blink);
+        # only a real structural change rebuilds the widget tree.
+        struct = (compact,
+                  tuple((g.get("id"), g.get("label"),
+                         tuple(m for m in g.get("members", [])))
+                        for g in manifest.get("groups", [])),
+                  tuple(w.get("id") for w in manifest.get("works", [])))
+
+        def _icon_btns(holder, w, v):
+            """Uniform circular cluster (all 24px, snug to the glyph).
+
+            Packed right in reverse so the visual order is
+            toggle · log · restart · edit · delete.
+            The toggle is the only accent; delete is the only red.
+            (Ordering lives in the group/task editors, not here.
+            Duplicating too: fork from +New / +Group, or Duplicate
+            inside the edit dialogs.)
+            Returns the toggle canvas (recolored in place on state flip).
+            """
+            th_circle_btn(holder, "🗑", lambda w=w: self.delete_work(w),
+                          style="danger").pack(side="right")
+            th_circle_btn(holder, "✎", lambda w=w: self.open_editor(w),
+                          ).pack(side="right", padx=(0, 4))
+            th_circle_btn(holder, "↻", lambda w=w: self._act_restart(w),
+                          ).pack(side="right", padx=(0, 4))
             if w.get("run") == "detached":
                 # No window exists in detached mode -- Hide is meaningless;
                 # the log viewer is the docker-logs equivalent instead.
-                th_button(btns, "log",
-                          lambda w=w: self.open_log_viewer(w),
-                          width=8).pack(side="left", padx=4)
+                th_circle_btn(holder, "☰",
+                              lambda w=w: self.open_log_viewer(w),
+                              ).pack(side="right", padx=(0, 4))
             else:
-                th_button(btns, "Show" if hidden else "Hide",
+                th_button(holder, "Show" if v["hidden"] else "Hide",
                           lambda w=w: self._act_hide(w),
-                          width=8).pack(side="left", padx=4)
-            th_button(btns, "↻", lambda w=w: self._act_restart(w),
-                      width=3).pack(side="left")
-            th_button(btns, "\u270f\ufe0f", lambda w=w: self.open_editor(w),
-                      width=3).pack(side="left", padx=(4, 0))
-            th_button(btns, "🗑", lambda w=w: self.delete_work(w),
-                      width=3).pack(side="left", padx=4)
+                          width=6).pack(side="right", padx=(0, 4))
+            tog = th_circle_btn(holder, "⏹" if v["running"] else "▶",
+                                lambda w=w: self._act_run(w),
+                                style=None if v["running"] else "accent")
+            tog.pack(side="right", padx=(0, 4))
+            return tog
 
-        for g in manifest.get("groups", []):
-            members = [by_id[m] for m in g.get("members", []) if m in by_id]
-            if not members:
-                continue
-            on = sum(1 for m in members if m.get("id") in run)
-            gf = tk.LabelFrame(self.list_frame, text=f"  \U0001f4c1 {g.get('label', g.get('id'))}  ({on}/{len(members)})  ",
-                               font=("Segoe UI", 10, "bold"),
-                               bg=TH_BG, fg=TH_ACCENT, relief="flat", bd=0,
-                               labelanchor="nw")
-            gf.pack(fill="x", pady=6)
-            for m in members:
-                work_row(gf, m)
-            brow = tk.Frame(gf, bg=TH_BG)
-            brow.pack(fill="x", padx=6, pady=(0, 6))
-            th_button(brow, text="▶ Start all",
-                      command=lambda ms=members: self._act_all(ms, True),
-                      width=10, accent=True).pack(side="left")
-            th_button(brow, "✏️", lambda g=g: self.open_group_editor(g),
-                      width=3).pack(side="left", padx=(4, 0))
-            th_button(brow, "🗑", lambda g=g: self.delete_group(g),
-                      width=3).pack(side="left", padx=4)
-            th_button(brow, text="\u23f9 Stop all",
-                      command=lambda ms=members: self._act_all(ms, False),
-                      width=10).pack(side="left", padx=4)
-        for w in manifest.get("works", []):
-            if w.get("id") not in shown:
-                work_row(self.list_frame, w)
+        def _compact_row(main, w, v):
+            """One line: icon · title · status · icon cluster. Returns refs."""
+            line = tk.Frame(main, bg=TH_CARD)
+            line.pack(fill="x", padx=10, pady=6)
+            btns = tk.Frame(line, bg=TH_CARD)
+            btns.pack(side="right", padx=(8, 0))
+            tog = _icon_btns(btns, w, v)
+            # the icon carries the state color (green / dim / blue);
+            # edge bar + status word back it up, so no dot is needed.
+            iconlab = tk.Label(line, text=v["icon"], fg=v["icon_c"],
+                               bg=TH_CARD, font=TH_FONT_B)
+            iconlab.pack(side="left")
+            title = tk.Label(line,
+                             text=f" {_short(w.get('label', w.get('id', '')))}",
+                             font=TH_FONT_B, bg=TH_CARD, fg=TH_FG,
+                             cursor="hand2")
+            title.pack(side="left")
+            st = tk.Label(line, text=f"  ·  {v['sub']}", font=TH_FONT_S,
+                          bg=TH_CARD, fg=v["sub_c"], cursor="hand2")
+            st.pack(side="left")
+            # the label IS the big target: click toggles Start/Stop.
+            for lab in (title, st):
+                lab.bind("<Button-1>", lambda _e, w=w: self._act_run(w))
+            return {"kind": "compact", "icon": iconlab, "title": title,
+                    "sub": st, "tog": tog}
+
+        def _roomy_row(main, w, v):
+            """Two-line card. Returns refs for in-place updates."""
+            topl = tk.Frame(main, bg=TH_CARD)
+            topl.pack(fill="x", padx=10, pady=(8, 0))
+            iconlab = tk.Label(topl, text=v["icon"], fg=v["icon_c"],
+                               bg=TH_CARD, font=TH_FONT_B)
+            iconlab.pack(side="left")
+            title = tk.Label(topl, text=f" {w.get('label', w.get('id', ''))}",
+                             font=TH_FONT_B, bg=TH_CARD, fg=TH_FG,
+                             cursor="hand2")
+            title.pack(side="left")
+            title.bind("<Button-1>", lambda _e, w=w: self._act_run(w))
+            sublab = tk.Label(main, text=v["sub"], font=TH_FONT_S,
+                              bg=TH_CARD, fg=v["sub_c"])
+            sublab.pack(anchor="w", padx=26)
+            btns = tk.Frame(main, bg=TH_CARD)
+            btns.pack(fill="x", padx=10, pady=(6, 8))
+            left = tk.Frame(btns, bg=TH_CARD)
+            left.pack(side="left")
+            right = tk.Frame(btns, bg=TH_CARD)
+            right.pack(side="right")
+            tog_btn = th_button(left, "Stop" if v["running"] else "Start",
+                                lambda w=w: self._act_run(w),
+                                width=8, accent=not v["running"])
+            tog_btn.pack(side="left")
+            if w.get("run") == "detached":
+                log_btn = th_button(left, "Log",
+                                    lambda w=w: self.open_log_viewer(w),
+                                    width=8)
+                log_btn.pack(side="left", padx=(6, 0))
+            else:
+                log_btn = th_button(left, "Show" if v["hidden"] else "Hide",
+                                    lambda w=w: self._act_hide(w),
+                                    width=8)
+                log_btn.pack(side="left", padx=(6, 0))
+            th_circle_btn(right, "🗑", lambda w=w: self.delete_work(w),
+                          style="danger").pack(side="right")
+            th_circle_btn(right, "✎", lambda w=w: self.open_editor(w),
+                          ).pack(side="right", padx=(0, 4))
+            th_circle_btn(right, "↻", lambda w=w: self._act_restart(w),
+                          ).pack(side="right", padx=(0, 4))
+            return {"kind": "roomy", "icon": iconlab, "title": title,
+                    "sub": sublab, "tog_btn": tog_btn, "log_btn": log_btn}
+
+        def work_row(parent, w):
+            """Build one row, registering live refs for in-place updates."""
+            wid = w.get("id", "")
+            shown.add(wid)
+            v = _row_view(w, run, self._pending)
+            row = tk.Frame(parent, bg=TH_CARD, padx=0, pady=0,
+                           highlightbackground=TH_CARD_EDGE,
+                           highlightthickness=1)
+            row.pack(fill="x", pady=4, padx=2)
+            # icon carries the running color; the edge bar stays too.
+            edge = tk.Frame(row,
+                            bg=TH_GREEN if v["running"] else TH_CARD_EDGE,
+                            width=3)
+            edge.pack(side="left", fill="y")
+            main = tk.Frame(row, bg=TH_CARD)
+            main.pack(side="left", fill="both", expand=True)
+            if compact:
+                refs = _compact_row(main, w, v)
+            else:
+                refs = _roomy_row(main, w, v)
+            refs.update(frame=row, edge=edge)
+            self._rows[wid] = refs
+
+        if struct != getattr(self, "_struct_sig", None) or not getattr(self, "_rows", None):
+            for ch in self.list_frame.winfo_children():
+                ch.destroy()
+            self._rows = {}
+            self._group_heads = {}
+            for g in manifest.get("groups", []):
+                members = [by_id[m] for m in g.get("members", []) if m in by_id]
+                if not members:
+                    continue
+                on = sum(1 for m in members if m.get("id") in run)
+                gf = tk.LabelFrame(self.list_frame, text=f"  {g.get('label', g.get('id'))}  ·  {on}/{len(members)} running  ",
+                                   font=TH_FONT_SECTION,
+                                   bg=TH_BG, fg=TH_DIM, relief="flat", bd=0,
+                                   labelanchor="nw")
+                gf.pack(fill="x", pady=(10, 2))
+                self._group_heads[g.get("id")] = gf
+                for m in members:
+                    work_row(gf, m)
+                brow = tk.Frame(gf, bg=TH_BG)
+                brow.pack(fill="x", padx=6, pady=(0, 8))
+                th_button(brow, text="▶ Start all",
+                          command=lambda ms=members: self._act_all(ms, True),
+                          width=10, accent=True).pack(side="left")
+                th_circle_btn(brow, "🗑", lambda g=g: self.delete_group(g),
+                              style="danger").pack(side="right")
+                th_circle_btn(brow, "✎", lambda g=g: self.open_group_editor(g),
+                              ).pack(side="right", padx=(0, 4))
+                th_button(brow, text="⏹ Stop all",
+                          command=lambda ms=members: self._act_all(ms, False),
+                          width=10, style="ghost").pack(side="right", padx=(0, 4))
+            for w in manifest.get("works", []):
+                if w.get("id") not in shown:
+                    work_row(self.list_frame, w)
+            self._struct_sig = struct
+        else:
+            # Same layout: touch text/colors only. No destroy, no blink.
+            for w in manifest.get("works", []):
+                refs = self._rows.get(w.get("id"))
+                if refs is not None:
+                    self._update_row(refs, w, run)
+            for g in manifest.get("groups", []):
+                head = self._group_heads.get(g.get("id"))
+                if head is None:
+                    continue
+                try:
+                    members = [by_id[m] for m in g.get("members", [])
+                               if m in by_id]
+                    on = sum(1 for m in members if m.get("id") in run)
+                    head.config(text=f"  {g.get('label', g.get('id'))}  ·  {on}/{len(members)} running  ")
+                except Exception:
+                    pass
         if not quiet:
             self.say(f"{len(run)} running")
         # Scroll health (backlog #4): explicit region after every rebuild
@@ -1009,21 +1517,125 @@ class Dashboard:
         except Exception:
             pass
 
+    def _update_row(self, refs, w, run):
+        """In-place row update: text + colors only, never destroy.
+
+        Same tick, no widget churn -- this is what killed the blink.
+        Structural changes (add/remove/move/label) still take the full
+        rebuild path via the struct key.
+        """
+        try:
+            v = _row_view(w, run, self._pending)
+        except Exception:
+            return
+        try:
+            refs["edge"].config(bg=TH_GREEN if v["running"] else TH_CARD_EDGE)
+            refs["icon"].config(text=v["icon"], fg=v["icon_c"])
+            if refs.get("kind") == "compact":
+                refs["title"].config(
+                    text=f" {_short(w.get('label', w.get('id', '')))}")
+                refs["sub"].config(text=f"  ·  {v['sub']}", fg=v["sub_c"])
+                tog = refs.get("tog")
+                if tog is not None:
+                    if v["running"]:
+                        tog.recolor(TH_BTN, TH_BTN_HI, TH_FG)
+                    else:
+                        tog.recolor(TH_ACCENT, TH_ACCENT_HI, "white")
+                    try:
+                        tog.itemconfig(tog._txt,
+                                       text="⏹" if v["running"] else "▶")
+                    except Exception:
+                        pass
+            else:
+                refs["title"].config(
+                    text=f" {w.get('label', w.get('id', ''))}")
+                refs["sub"].config(text=v["sub"], fg=v["sub_c"])
+                tb = refs.get("tog_btn")
+                if tb is not None:
+                    if v["running"]:
+                        tb.config(text="Stop", bg=TH_BTN, fg=TH_FG,
+                                  activebackground=TH_BTN_HI)
+                    else:
+                        tb.config(text="Start", bg=TH_ACCENT, fg="white",
+                                  activebackground=TH_ACCENT_HI)
+                lb = refs.get("log_btn")
+                if lb is not None:
+                    if w.get("run") == "detached":
+                        lb.config(text="Log")
+                    else:
+                        lb.config(text="Show" if v["hidden"] else "Hide")
+        except Exception:
+            pass
+
+    def _sweep_pending(self):
+        """Clear transitional marks the live snapshot confirms (or timeout).
+
+        Called every _poll tick: blue starting… survives until the work
+        is ACTUALLY running, so a stale cache can never flash white in
+        between. Fire-and-forget marks (hide/show) never reach here.
+        """
+        pending = getattr(self, "_pending", None)
+        if not pending:
+            return
+        try:
+            run = running_snapshot()
+            now = time.monotonic()
+        except Exception:
+            return
+        cleared = False
+        for wid, e in list(pending.items()):
+            e = e or {}
+            ex = e.get("expect")
+            if ex is None or (wid in run) == ex or now >= e.get("until", 0):
+                pending.pop(wid, None)
+                cleared = True
+        if cleared:
+            try:
+                self.refresh(quiet=True)
+            except Exception:
+                pass
+
     # -- row actions (ALL async: scans/kills block for seconds and must
     # never freeze the tk mainloop -- that freeze was the real bug) -------
-    def _act_async(self, fn, working_msg):
+    def _act_async(self, fn, working_msg, pending=None):
+        """Run fn on a worker; `pending` = {wid: (state, expect)}.
+
+        The transitional mark (starting…/stopping…) lands on the same
+        tick as the click, and it guards double-clicks: a guarded
+        handler refuses to re-fire while its work is pending, so a fast
+        double Start can never spawn the work twice. `expect` is the
+        running-state that clears the mark (None = clear on finish).
+        """
+        if pending:
+            now = time.monotonic()
+            for k, v in pending.items():
+                st, ex = v
+                self._pending[k] = {"state": st, "expect": ex,
+                                    "until": now + 20}
         self.say(working_msg)
-        th = threading.Thread(target=self._run_async, args=(fn,), daemon=True)
+        self.refresh(quiet=True)
+        th = threading.Thread(target=self._run_async,
+                              args=(fn, list(pending or {})), daemon=True)
         th.start()
 
-    def _run_async(self, fn):
+    def _run_async(self, fn, pending_wids):
         try:
             msg = fn()
         except Exception as e:
             msg = f"failed: {e}"
+        # Start/stop marks stay until the live snapshot CONFIRMS them
+        # (swept by _poll); only fire-and-forget marks clear here.
+        for k in pending_wids:
+            e = self._pending.get(k)
+            if e is not None and e.get("expect") is None:
+                self._pending.pop(k, None)
 
         def _done(m=msg):
             self.say(m)
+            try:
+                _rescan.set()  # fresh scan NOW so confirm lands fast
+            except Exception:
+                pass
             self.refresh(quiet=True)
             try:
                 if tray_host is not None:
@@ -1042,22 +1654,32 @@ class Dashboard:
         flicker); a shrink means a fresh launch truncated the log, so the
         view reloads. ANSI colors render via wc_core.ansi_runs tags.
         A work with its own `"log"` key tails that file instead.
+        Open = click, close = click again (toggle per work, never
+        duplicates): a second click on ☰ closes that work's viewer
+        instead of spawning another one.
         """
+        wid = w.get("id", "")
+        label = w.get("label", wid or "?")
+        old = self._log_wins.get(wid)
+        if old is not None:
+            try:
+                alive = bool(old.winfo_exists())
+            except Exception:
+                alive = False
+            self._forget_win(old)
+            if alive:
+                self.say(f"closed log: {label}")
+                return
         try:
             path = core.work_display_log_path(w)
         except Exception as e:
             self.say(f"log path failed: {e}")
             return
-        label = w.get("label", w.get("id", "?"))
-        win = tk.Toplevel(self.root)
-        win.title(f"log: {label}")
+        win, body = self._popup_shell(f"log: {label}")
         self._place_near_tray(win, 760, 460)
-        try:
-            win.transient(self.root)
-        except Exception:
-            pass
         self._track_popup(win)
-        txt = tk.Text(win, wrap="none", bg="#1e1e1e", fg="#d4d4d4",
+        self._log_wins[wid] = win
+        txt = tk.Text(body, wrap="none", bg="#1e1e1e", fg="#d4d4d4",
                       insertbackground="#d4d4d4", selectbackground="#264f78")
         txt.pack(fill="both", expand=True)
         for _name, _color in LOG_FG.items():
@@ -1068,8 +1690,8 @@ class Dashboard:
                      lambda e: e.widget.config(cursor="hand2"))
         txt.tag_bind("link", "<Leave>", lambda e: e.widget.config(cursor=""))
         txt.config(state="disabled")
-        bar = tk.Frame(win)
-        bar.pack(fill="x")
+        bar = tk.Frame(body, bg=TH_BG)
+        bar.pack(fill="x", pady=(6, 0))
         state = {"pos": 0}
 
         def _insert_runs(chunk):
@@ -1118,18 +1740,38 @@ class Dashboard:
             except Exception:
                 pass
 
-        tk.Button(bar, text="Reload",
-                  command=lambda: win.after(0, _full_load)).pack(side="left")
-        tk.Label(bar, text=path).pack(side="left", padx=8)
+        th_button(bar, text="Reload",
+                  command=lambda: win.after(0, _full_load),
+                  width=8).pack(side="left")
+        tk.Label(bar, text=path, bg=TH_BG, fg=TH_DIM,
+                 font=TH_FONT_S).pack(side="left", padx=8)
         _full_load()
         win.after(1000, _follow)
         return win
 
     def _act_run(self, w):
-        self._act_async(lambda: toggle_start_stop(w), "working…")
+        wid = w.get("id", "")
+        label = w.get("label", wid)
+        if wid in self._pending:
+            self.say(f"already {self._pending[wid].get('state', 'working')} '{label}'…")
+            return
+        state = "stopping" if wid in running_snapshot() else "starting"
+        self._act_async(lambda: toggle_start_stop(w), f"{state} '{label}'…",
+                        pending={wid: (state, state == "starting")})
 
     def _act_hide(self, w):
-        self._act_async(lambda: self._do_hide(w), "working…")
+        wid = w.get("id", "")
+        label = w.get("label", wid)
+        if wid in self._pending:
+            self.say(f"already {self._pending[wid].get('state', 'working')} '{label}'…")
+            return
+        try:
+            hiding = not core.is_work_hidden(w)
+        except Exception:
+            hiding = True
+        state = "hiding" if hiding else "showing"
+        self._act_async(lambda: self._do_hide(w), f"{state} '{label}'…",
+                        pending={wid: (state, None)})
 
     def _do_hide(self, w):
         msg = toggle_hide_show(w)
@@ -1167,10 +1809,140 @@ class Dashboard:
             self.refresh(quiet=True)
 
     def _act_restart(self, w):
-        self._act_async(lambda: self._do_restart(w), "restarting…")
+        wid = w.get("id", "")
+        label = w.get("label", wid)
+        if wid in self._pending:
+            self.say(f"already {self._pending[wid].get('state', 'working')} '{label}'…")
+            return
+        self._act_async(lambda: self._do_restart(w),
+                        f"restarting '{label}'…",
+                        pending={wid: ("restarting", True)})
 
     def _act_all(self, members, start):
-        self._act_async(lambda: self._do_all(members, start), "working…")
+        fresh = [m.get("id", "") for m in members
+                 if m.get("id", "") not in self._pending]
+        if not fresh:
+            self.say("already working…")
+            return
+        state = "starting" if start else "stopping"
+        self._act_async(lambda: self._do_all(members, start),
+                        f"{state} {len(fresh)} work(s)…",
+                        pending={k: (state, bool(start)) for k in fresh})
+
+    def _move_work(self, w, direction):
+        """Custom sort: swap with the adjacent visible sibling, persist.
+
+        direction -1 = up, +1 = down, within the work's own list only
+        (its group, or the ungrouped tail). Manifest order is the
+        display order, so the move survives restarts and editor saves.
+        Tiny local JSON write — safe on the tk thread, no scan.
+        """
+        wid = w.get("id", "")
+        label = w.get("label", wid)
+        try:
+            man = core.load_manifest()
+        except Exception:
+            return
+        groups = man.get("groups", [])
+        gid = next((g.get("id") for g in groups
+                    if wid in g.get("members", [])), None)
+        if gid is not None:
+            g = next(g for g in groups if g.get("id") == gid)
+            new = _swap_adjacent(g.get("members", []), wid, direction)
+            if new == list(g.get("members", [])):
+                self.say("already at the "
+                         + ("top" if direction < 0 else "bottom"))
+                return
+            g["members"] = new
+        else:
+            ids = [x.get("id") for x in man.get("works", [])
+                   if not any(x.get("id") in g.get("members", [])
+                              for g in groups)]
+            new = _swap_adjacent(ids, wid, direction)
+            if new == ids:
+                self.say("already at the "
+                         + ("top" if direction < 0 else "bottom"))
+                return
+            pos = {v: i for i, v in enumerate(new)}
+            man["works"] = sorted(
+                man.get("works", []),
+                key=lambda x: pos.get(x.get("id"), len(pos)))
+        try:
+            core.save_manifest(man)
+        except Exception as e:
+            self.say(f"move failed: {e}")
+            return
+        self.say(f"moved '{label}' "
+                 + ("up" if direction < 0 else "down"))
+        self.refresh(quiet=True)
+
+    def _duplicate_work(self, w):
+        """Clone a work: same config, new id, placed right after the original
+        (same group slot too). Tiny local JSON write — tk thread is fine."""
+        wid = w.get("id", "")
+        try:
+            man = core.load_manifest()
+        except Exception:
+            return
+        src = next((x for x in man.get("works", []) if x.get("id") == wid),
+                   None)
+        if src is None:
+            self.say("already gone — refresh and retry")
+            self.refresh(quiet=True)
+            return
+        base = (re.sub(r"[^a-z0-9]+", "-",
+                       str(src.get("label", wid) or wid).lower())
+                .strip("-")[:20] or "work")
+        ids = {x.get("id") for x in man.get("works", [])}
+        nid, n = base, 2
+        while nid in ids:
+            nid = f"{base}-{n}"
+            n += 1
+        entry = dict(src)
+        entry["id"] = nid
+        entry["label"] = (src.get("label", wid) or wid) + " copy"
+        works = man.get("works", [])
+        at = next((i for i, x in enumerate(works) if x.get("id") == wid),
+                  len(works) - 1)
+        works.insert(at + 1, entry)
+        man["works"] = works
+        for g in man.get("groups", []):
+            if wid in g.get("members", []):
+                g["members"].insert(g["members"].index(wid) + 1, nid)
+        try:
+            core.save_manifest(man)
+        except Exception as e:
+            self.say(f"duplicate failed: {e}")
+            return
+        self.say(f"duplicated '{entry['label']}'")
+        self.refresh(quiet=True)
+
+    def _duplicate_group(self, group):
+        """Clone a group: same members, fresh id+label. Tk-thread safe."""
+        gid = (group or {}).get("id", "")
+        try:
+            man = core.load_manifest()
+        except Exception:
+            return
+        src = next((g for g in man.get("groups", [])
+                    if g.get("id") == gid), None)
+        if src is None:
+            self.say("group gone — refresh and retry")
+            self.refresh(quiet=True)
+            return
+        have = {x.get("id") for x in man.get("works", [])}
+        members = [m for m in src.get("members", []) if m in have]
+        label = (src.get("label", gid) or gid) + " copy"
+        nid = core.slug_group_id(label, man)
+        man.setdefault("groups", []).append(
+            {"id": nid, "label": label, "members": members})
+        try:
+            core.save_manifest(man)
+        except Exception as e:
+            self.say(f"duplicate failed: {e}")
+            return
+        self.say(f"duplicated group '{label}'")
+        self.refresh(quiet=True)
 
     def _do_all(self, members, start):
         msgs = []
@@ -1211,20 +1983,17 @@ class Dashboard:
     # -- group editor (backlog #3) ----------------------------------------
     def open_group_editor(self, group=None):
         manifest = core.load_manifest()
-        win = tk.Toplevel(self.root)
-        win.title("Rename Group" if group else "New Group")
-        win.attributes("-topmost", True)
-        win.resizable(False, False)
-        win.configure(bg=TH_BG)
+        win, body = self._popup_shell("Rename Group" if group else "New Group")
         namevar = tk.StringVar(value=(group or {}).get("label", ""))
-        tk.Label(win, text="Label", bg=TH_BG, fg=TH_FG).grid(
+        tk.Label(body, text="Label", bg=TH_BG, fg=TH_FG).grid(
             row=0, column=0, sticky="w", padx=8, pady=6)
-        tk.Entry(win, textvariable=namevar, width=40, relief="flat", bd=4,
-                 bg=TH_FIELD, fg="white", insertbackground="white").grid(
+        tk.Entry(body, textvariable=namevar, width=40, relief="flat", bd=4,
+                 bg=TH_FIELD, fg=TH_INPUT_FG,
+                 insertbackground=TH_INPUT_FG).grid(
             row=0, column=1, padx=8, pady=6)
-        tk.Label(win, text="Members", bg=TH_BG, fg=TH_FG).grid(
+        tk.Label(body, text="Members", bg=TH_BG, fg=TH_FG).grid(
             row=1, column=0, sticky="nw", padx=8)
-        box = tk.Frame(win, bg=TH_BG)
+        box = tk.Frame(body, bg=TH_BG)
         box.grid(row=1, column=1, sticky="w", padx=8, pady=3)
         current = set((group or {}).get("members", []))
         checks = {}
@@ -1236,6 +2005,85 @@ class Dashboard:
                            bg=TH_BG, fg=TH_FG, selectcolor=TH_FIELD,
                            activebackground=TH_BG, activeforeground=TH_FG,
                            anchor="w").pack(fill="x")
+        # Order lives here (not on every row): members in order, ▲▼ to
+        # move, membership ticks stay in sync both ways.
+        by_id = {w.get("id"): w for w in manifest.get("works", [])}
+        order = [m for m in (group or {}).get("members", []) if m in by_id]
+        tk.Label(body, text="Order (top = first):", bg=TH_BG, fg=TH_FG).grid(
+            row=2, column=0, sticky="nw", padx=8, pady=3)
+        obox = tk.Frame(body, bg=TH_BG)
+        obox.grid(row=2, column=1, sticky="w", padx=8, pady=3)
+        lb = tk.Listbox(obox, width=40, height=min(6, max(3, len(order) + 1)),
+                        relief="flat", bd=4, bg=TH_FIELD, fg=TH_FG,
+                        selectbackground=TH_ACCENT,
+                        selectforeground="white",
+                        highlightthickness=0, activestyle="none")
+        lb.pack(side="left")
+        abox = tk.Frame(obox, bg=TH_BG)
+        abox.pack(side="left", padx=(6, 0))
+        th_circle_btn(abox, "▲", lambda: _ord_move(-1),
+                      font_size=9).pack(pady=2)
+        th_circle_btn(abox, "▼", lambda: _ord_move(+1),
+                      font_size=9).pack(pady=2)
+
+        def _lb_sync(sel=None):
+            lb.delete(0, "end")
+            for mid in order:
+                lb.insert("end", by_id.get(mid, {}).get("label", mid))
+            if sel is not None and order:
+                lb.selection_set(max(0, min(sel, len(order) - 1)))
+
+        def _ord_move(direction):
+            try:
+                sel = lb.curselection()[0]
+            except IndexError:
+                return
+            new = _swap_adjacent(order, order[sel], direction)
+            if new != order:
+                order[:] = new
+                _lb_sync(sel + direction)
+
+        def _on_toggle(wid, *a):
+            if checks[wid].get():
+                if wid not in order:
+                    order.append(wid)
+            elif wid in order:
+                order.remove(wid)
+            _lb_sync()
+
+        for _wid, _var in checks.items():
+            _var.trace_add("write", lambda *a, wid=_wid: _on_toggle(wid))
+        _lb_sync()
+        # Fork: +Group starts from an existing group's config.
+        if group is None:
+            tk.Label(body, text="Fork from:", bg=TH_BG, fg=TH_FG).grid(
+                row=3, column=0, sticky="w", padx=8, pady=3)
+            gforkvar = tk.StringVar(value="(blank — fresh)")
+            gforkopts = ["(blank — fresh)"] + [
+                f"{g2.get('label', g2.get('id'))} [{g2.get('id')}]"
+                for g2 in manifest.get("groups", [])]
+            om_gfork = tk.OptionMenu(body, gforkvar, *gforkopts)
+            om_gfork.configure(bg=TH_FIELD, fg=TH_INPUT_FG, relief="flat",
+                               bd=0, activebackground=TH_BTN_HI,
+                               highlightthickness=0)
+            om_gfork["menu"].configure(bg=TH_FIELD, fg=TH_INPUT_FG)
+            om_gfork.grid(row=3, column=1, sticky="w", padx=8, pady=3)
+
+            def _on_gfork(*a):
+                sel = gforkvar.get()
+                if sel.startswith("(blank"):
+                    return
+                sid = sel.split("[")[-1].rstrip("]")
+                src = next((g for g in manifest.get("groups", [])
+                            if g.get("id") == sid), None)
+                if src is None:
+                    return
+                namevar.set((src.get("label", "") or "") + " copy")
+                for wid2, var2 in checks.items():
+                    var2.set(wid2 in src.get("members", []))
+                # membership traces rebuild `order` via _on_toggle.
+
+            gforkvar.trace_add("write", _on_gfork)
 
         def save():
             label = namevar.get().strip()
@@ -1244,8 +2092,8 @@ class Dashboard:
                 return
             man = core.load_manifest()
             gid = (group or {}).get("id") or core.slug_group_id(label, man)
-            members = [x.get("id") for x in man.get("works", [])
-                       if x.get("id") in checks and checks[x.get("id")].get()]
+            members = [mid for mid in order
+                       if mid in [x.get("id") for x in man.get("works", [])]]
             groups = man.get("groups", [])
             hit = [g for g in groups if g.get("id") == gid]
             if hit:
@@ -1263,8 +2111,13 @@ class Dashboard:
             self.say(f"saved group '{label}'")
             self.refresh(quiet=True)
 
-        th_button(win, text="Save", command=save, width=14,
-                  accent=True).grid(row=2, column=1, pady=10)
+        if (group or {}).get("id"):
+            th_button(body, text="Duplicate",
+                      command=lambda: self._duplicate_group(group),
+                      width=11).grid(row=4, column=0, sticky="w",
+                                     padx=8, pady=10)
+        th_button(body, text="Save", command=save, width=14,
+                  accent=True).grid(row=4, column=1, pady=10)
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
@@ -1292,18 +2145,30 @@ class Dashboard:
     # -- settings (suite hotkey) ------------------------------------------
     def open_settings(self):
         manifest = core.load_manifest()
-        current = core.get_settings(manifest).get("hotkey", core.DEFAULT_HOTKEY)
-        win = tk.Toplevel(self.root)
-        win.title("Settings")
-        win.attributes("-topmost", True)
-        win.resizable(False, False)
-        win.configure(bg=TH_BG)
-        tk.Label(win, text="Global hotkey (modifiers + key):", bg=TH_BG,
+        st0 = core.get_settings(manifest)
+        current = st0.get("hotkey", core.DEFAULT_HOTKEY)
+        win, body = self._popup_shell("Settings")
+        tk.Label(body, text="Global hotkey (modifiers + key):", bg=TH_BG,
                  fg=TH_FG).grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        ent = tk.Entry(win, width=24, relief="flat", bd=4,
-                       bg=TH_FIELD, fg="white", insertbackground="white")
+        ent = tk.Entry(body, width=24, relief="flat", bd=4,
+                       bg=TH_FIELD, fg=TH_INPUT_FG,
+                       insertbackground=TH_INPUT_FG)
         ent.grid(row=0, column=1, padx=8, pady=6)
         ent.insert(0, current)
+        tk.Label(body, text="Theme:", bg=TH_BG,
+                 fg=TH_FG).grid(row=1, column=0, sticky="w", padx=8, pady=3)
+        themevar = tk.StringVar(value=st0.get("theme", "dark"))
+        om_theme = tk.OptionMenu(body, themevar, "dark", "light")
+        om_theme.configure(bg=TH_FIELD, fg=TH_INPUT_FG, relief="flat", bd=0,
+                           activebackground=TH_BTN_HI, highlightthickness=0)
+        om_theme["menu"].configure(bg=TH_FIELD, fg=TH_INPUT_FG)
+        om_theme.grid(row=1, column=1, sticky="w", padx=8, pady=3)
+        compactvar = tk.BooleanVar(value=bool(st0.get("compact", True)))
+        tk.Checkbutton(body, text="compact rows (one line per work)",
+                       variable=compactvar, bg=TH_BG, fg=TH_FG,
+                       selectcolor=TH_FIELD, activebackground=TH_BG,
+                       activeforeground=TH_FG).grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=8, pady=3)
 
         def save():
             hk = core.canonical_hotkey(ent.get().strip())
@@ -1314,7 +2179,10 @@ class Dashboard:
                 return
             man = core.load_manifest()
             st = core.get_settings(man)
+            old_theme = st.get("theme", "dark")
             st["hotkey"] = hk
+            st["theme"] = themevar.get()
+            st["compact"] = bool(compactvar.get())
             man["settings"] = st
             try:
                 core.save_manifest(man)
@@ -1329,15 +2197,20 @@ class Dashboard:
             self._hotkey_on = False
             self._ensure_hotkey()
             if getattr(self, "_hotkey_on", False):
-                self.say(f"hotkey {hk} on")
+                hk_msg = f"hotkey {hk} on"
             else:
-                self.say(f"hotkey {hk} saved -- taken, grabs when free")
+                hk_msg = f"hotkey {hk} saved -- taken, grabs when free"
                 log(f"hotkey {hk} taken at settings save")
-            win.destroy()
-            self.refresh(quiet=True)
+            if st["theme"] != old_theme:
+                self._rebuild()  # LAST: closes this window with the old root
+                self.say(f"{hk_msg} · theme {st['theme']}")
+            else:
+                win.destroy()
+                self.say(hk_msg)
+                self.refresh(quiet=True)
 
-        th_button(win, text="Save", command=save, width=14,
-                  accent=True).grid(row=1, column=1, pady=10)
+        th_button(body, text="Save", command=save, width=14,
+                  accent=True).grid(row=3, column=1, pady=10)
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
@@ -1351,11 +2224,7 @@ class Dashboard:
     # -- config editor ----------------------------------------------------
     def open_editor(self, work=None):
         manifest = core.load_manifest()
-        win = tk.Toplevel(self.root)
-        win.title("Edit Task" if work else "New Task")
-        win.attributes("-topmost", True)
-        win.resizable(False, False)
-        win.configure(bg=TH_BG)
+        win, body = self._popup_shell("Edit Task" if work else "New Task")
         vals = {
             "label": tk.StringVar(value=(work or {}).get("label", "")),
             "bat": tk.StringVar(value=(work or {}).get("bat", "")),
@@ -1372,58 +2241,61 @@ class Dashboard:
         fields = [("Label", "label"), ("Start file (.bat/.lnk/.exe)", "bat"),
                   ("Match token (CommandLine)", "match")]
         for i, (cap, key) in enumerate(fields):
-            tk.Label(win, text=cap, bg=TH_BG, fg=TH_FG).grid(
-                row=i, column=0, sticky="w", padx=8, pady=3)
-            tk.Entry(win, textvariable=vals[key], width=44, relief="flat", bd=4,
-                     bg=TH_FIELD, fg="white", insertbackground="white").grid(
-                         row=i, column=1, padx=8, pady=3)
-        th_button(win, text="Browse…",
+            tk.Label(body, text=cap, bg=TH_BG, fg=TH_FG).grid(
+                row=i + 1, column=0, sticky="w", padx=8, pady=3)
+            tk.Entry(body, textvariable=vals[key], width=44, relief="flat", bd=4,
+                     bg=TH_FIELD, fg=TH_INPUT_FG,
+                     insertbackground=TH_INPUT_FG).grid(
+                         row=i + 1, column=1, padx=8, pady=3)
+        th_button(body, text="Browse…",
                   command=lambda: vals["bat"].set(
                       filedialog.askopenfilename(
                           initialdir=str(HERE),
                           filetypes=[("Launchers", "*.bat *.lnk *.exe"), ("All", "*.*")]) or vals["bat"].get()),
-                  width=9).grid(row=1, column=2, padx=8)
-        tk.Label(win, text="Icon", bg=TH_BG, fg=TH_FG).grid(
-            row=3, column=0, sticky="w", padx=8, pady=3)
-        om_icon = tk.OptionMenu(win, vals["icon"], *ICON_CHOICES)
-        om_icon.configure(bg=TH_FIELD, fg="white", relief="flat", bd=0,
-                          activebackground=TH_BTN_HI, highlightthickness=0)
-        om_icon["menu"].configure(bg=TH_FIELD, fg="white")
-        om_icon.grid(row=3, column=1, sticky="w", padx=8)
-        tk.Label(win, text="Group", bg=TH_BG, fg=TH_FG).grid(
+                  width=9).grid(row=2, column=2, padx=8)
+        tk.Label(body, text="Icon", bg=TH_BG, fg=TH_FG).grid(
             row=4, column=0, sticky="w", padx=8, pady=3)
+        om_icon = tk.OptionMenu(body, vals["icon"], *ICON_CHOICES)
+        om_icon.configure(bg=TH_FIELD, fg=TH_INPUT_FG, relief="flat", bd=0,
+                          activebackground=TH_BTN_HI, highlightthickness=0)
+        om_icon["menu"].configure(bg=TH_FIELD, fg=TH_INPUT_FG)
+        om_icon.grid(row=4, column=1, sticky="w", padx=8)
+        tk.Label(body, text="Group", bg=TH_BG, fg=TH_FG).grid(
+            row=5, column=0, sticky="w", padx=8, pady=3)
         groups = ["(none — standalone)"] + [f"{g.get('label')} [{g.get('id')}]" for g in manifest.get("groups", [])]
         gvar = tk.StringVar(value="(none — standalone)")
         if vals["group"].get():
             for txt in groups:
                 if vals["group"].get() in txt:
                     gvar = tk.StringVar(value=txt)
-        om_grp = tk.OptionMenu(win, gvar, *groups)
-        om_grp.configure(bg=TH_FIELD, fg="white", relief="flat", bd=0,
+        om_grp = tk.OptionMenu(body, gvar, *groups)
+        om_grp.configure(bg=TH_FIELD, fg=TH_INPUT_FG, relief="flat", bd=0,
                          activebackground=TH_BTN_HI, highlightthickness=0)
-        om_grp["menu"].configure(bg=TH_FIELD, fg="white")
-        om_grp.grid(row=4, column=1, sticky="w", padx=8)
-        tk.Checkbutton(win, text="detect running state", variable=vals["detect"],
+        om_grp["menu"].configure(bg=TH_FIELD, fg=TH_INPUT_FG)
+        om_grp.grid(row=5, column=1, sticky="w", padx=8)
+        tk.Checkbutton(body, text="detect running state", variable=vals["detect"],
                        bg=TH_BG, fg=TH_FG, selectcolor=TH_FIELD,
                        activebackground=TH_BG, activeforeground=TH_FG).grid(
-            row=5, column=1, sticky="w", padx=8)
-        tk.Label(win, text="Commands: one per line (app: prefix = App step, else Terminal). "
+            row=6, column=1, sticky="w", padx=8)
+        tk.Label(body, text="Commands: one per line (app: prefix = App step, else Terminal). "
                            "Non-empty = inline mode, overrides .bat at launch.",
                  bg=TH_BG, fg=TH_DIM, font=TH_FONT_S).grid(
-            row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
-        txt_steps = tk.Text(win, width=64, height=5, relief="flat", bd=4,
-                            bg=TH_FIELD, fg="white", insertbackground="white",
+            row=7, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
+        txt_steps = tk.Text(body, width=64, height=5, relief="flat", bd=4,
+                            bg=TH_FIELD, fg=TH_INPUT_FG,
+                            insertbackground=TH_INPUT_FG,
                             font=("Consolas", 9))
-        txt_steps.grid(row=7, column=0, columnspan=3, padx=8, pady=3, sticky="we")
+        txt_steps.grid(row=8, column=0, columnspan=3, padx=8, pady=3, sticky="we")
         if (work or {}).get("steps"):
             txt_steps.insert("1.0", core.steps_to_text(work.get("steps")))
-        tk.Label(win, text="Vars: NAME=value per line (%NAME% usable in commands).",
+        tk.Label(body, text="Vars: NAME=value per line (%NAME% usable in commands).",
                  bg=TH_BG, fg=TH_DIM, font=TH_FONT_S).grid(
-            row=8, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
-        txt_vars = tk.Text(win, width=64, height=3, relief="flat", bd=4,
-                           bg=TH_FIELD, fg="white", insertbackground="white",
+            row=9, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
+        txt_vars = tk.Text(body, width=64, height=3, relief="flat", bd=4,
+                           bg=TH_FIELD, fg=TH_INPUT_FG,
+                           insertbackground=TH_INPUT_FG,
                            font=("Consolas", 9))
-        txt_vars.grid(row=9, column=0, columnspan=3, padx=8, pady=3, sticky="we")
+        txt_vars.grid(row=10, column=0, columnspan=3, padx=8, pady=3, sticky="we")
         if (work or {}).get("vars"):
             txt_vars.insert("1.0", core.vars_to_text(work.get("vars")))
 
@@ -1487,10 +2359,8 @@ class Dashboard:
                 if g.get("id") == gid:
                     members.append(wid)
                 g["members"] = members
-            man["works"].sort(key=lambda x: x.get("label", ""))
-            man["works"] = sorted(man["works"], key=lambda x: x.get("label", ""))
-            man["works"].sort(key=lambda x: 0 if x.get("id") in
-                              {m for g in man.get("groups", []) for m in g.get("members", [])} else 1)
+            # No sorting here: manifest order IS the display order
+            # (custom sort survives every save).
             try:
                 core.save_manifest(man)
             except Exception as e:
@@ -1500,8 +2370,59 @@ class Dashboard:
             self.say(f"saved '{label}'")
             self.refresh(quiet=True)
 
-        th_button(win, text="Save", command=save, width=14,
-                  accent=True).grid(row=10, column=1, pady=10)
+        # Fork: +New starts from an existing work's config (pure prefill;
+        # the " copy" label mints a fresh id on save, never overwrites).
+        if work is None:
+            tk.Label(body, text="Fork from:", bg=TH_BG, fg=TH_FG).grid(
+                row=0, column=0, sticky="w", padx=8, pady=3)
+            forkvar = tk.StringVar(value="(blank — fresh)")
+            forkopts = ["(blank — fresh)"] + [
+                f"{w2.get('label', w2.get('id'))} [{w2.get('id')}]"
+                for w2 in manifest.get("works", [])]
+            om_fork = tk.OptionMenu(body, forkvar, *forkopts)
+            om_fork.configure(bg=TH_FIELD, fg=TH_INPUT_FG, relief="flat", bd=0,
+                              activebackground=TH_BTN_HI, highlightthickness=0)
+            om_fork["menu"].configure(bg=TH_FIELD, fg=TH_INPUT_FG)
+            om_fork.grid(row=0, column=1, sticky="w", padx=8, pady=3)
+
+            def _on_fork(*a):
+                sel = forkvar.get()
+                if sel.startswith("(blank"):
+                    return
+                sid = sel.split("[")[-1].rstrip("]")
+                src = next((x for x in manifest.get("works", [])
+                            if x.get("id") == sid), None)
+                if src is None:
+                    return
+                f = _work_to_form(src, manifest)
+                vals["label"].set(f["label"])
+                vals["bat"].set(f["bat"])
+                vals["match"].set(f["match"])
+                vals["icon"].set(f["icon"])
+                vals["detect"].set(f["detect"])
+                gvar.set(f["group"])
+                txt_steps.delete("1.0", "end")
+                txt_steps.insert("1.0", f["steps"])
+                txt_vars.delete("1.0", "end")
+                txt_vars.insert("1.0", f["vars"])
+
+            forkvar.trace_add("write", _on_fork)
+        # Ordering for this work (standalone or grouped): moves within
+        # its own visible list, dashboard refreshes underneath.
+        if (work or {}).get("id"):
+            mv = tk.Frame(body, bg=TH_BG)
+            mv.grid(row=11, column=0, sticky="w", padx=8, pady=10)
+            th_button(mv, text="↑ Up",
+                      command=lambda: self._move_work(work, -1),
+                      width=7).grid(row=0, column=0, padx=(0, 4))
+            th_button(mv, text="↓ Down",
+                      command=lambda: self._move_work(work, +1),
+                      width=7).grid(row=0, column=1)
+            th_button(mv, text="Duplicate",
+                      command=lambda: self._duplicate_work(work),
+                      width=9).grid(row=0, column=2, padx=(4, 0))
+        th_button(body, text="Save", command=save, width=14,
+                  accent=True).grid(row=11, column=1, pady=10)
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()

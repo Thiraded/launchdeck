@@ -101,6 +101,65 @@ referenced until `EnumWindows` returns. Diagnostics: `wc_logs/tray.log`.
       dashboard tree — editor/log dialogs are child Toplevels so they
       keep it open; re-pinned bottom-right on every show).
 
+## Dashboard look (2026-09-06)
+
+Single-line compact rows (default; `settings.compact=false` keeps the
+roomy two-line card): status edge + dot + title + status on one line,
+clicking the label toggles Start/Stop. Icon-only actions are 26px
+circles snug to the glyph (canvas oval+text — tk has no round Button):
+blue ▶ start, ⏹ stop, ☰ log, ↻ restart, ✎ edit, red 🗑 delete.
+Text buttons stay rectangular (+ New / + Group / Start all / Save…).
+Settings holds Theme (dark/light, log viewer stays dark) + compact
+toggle; a theme switch rebuilds the popup (`_rebuild`, retires the old
+`_poll` via generation counter). All popups (log viewer, editors,
+settings) are borderless (`_popup_shell`: hairline edge + custom
+header with title + ×, drag by the header) — no OS title bar anywhere.
+
+## Transitional states + log toggle (2026-09-06)
+
+Every Start/Stop/Restart/Hide/Start-all lands instantly: the row shows
+`starting…`/`stopping…`/`restarting…`/`hiding…` in accent + the status
+line names the work, on the same tick as the click (no waiting for the
+scan). The pending mark also guards double-clicks — re-firing while
+pending just says `already starting…`, so a fast double Start can
+never spawn twice. ☰ is a per-work toggle now: second click closes
+that work's viewer instead of spawning a duplicate (`_log_wins`;
+×/dismiss/changing theme all unregister).
+
+## Custom order + status icon (2026-09-06)
+
+Ordering lives in the editors, not on the rows: the group editor has
+an Order list (▲▼ moves, membership ticks sync both ways) and the
+task editor has ↑ Up / ↓ Down. Manifest order IS the display order;
+editor saves never re-sort (`self_test` guards the no-sort).
+The work icon carries the state color itself
+(green running / dim stopped / blue transitional) and the dot is
+gone; edge bar + status word back it up, so nothing is lost even
+where Windows renders the emoji in full color.
+
+## Confirm-then-clear + in-place refresh (2026-09-06)
+
+No more blue→white→green: a transitional mark clears only when the
+live snapshot CONFIRMS it (or after 20s), and every action wakes the
+monitor (`_rescan` event) so confirm lands in ~1s instead of the
+next 3s tick. Refresh is surgical now — same layout updates text and
+colors in place (`_rows` refs + circle `recolor`); only a structural
+change (add/remove/move/label/group/theme) rebuilds the tree, keyed
+by `_struct_sig`. No destroy-all means no blink. (If tkinter's
+in-place ever hits its limits, the escape hatch is a retained-mode
+UI — customtkinter, PyQt, or an Electron/Tauri shell — but nothing
+today needs it.)
+
+## Duplicating (2026-09-06)
+
+No clone button on the rows — forking lives in the creation flows:
++New has "Fork from" (prefills label/steps/vars/group/icon, label +
+" copy" so save mints a fresh id), +Group has the same for groups,
+and the edit dialogs have a Duplicate button (work / group) that
+clones in place right after the original. Pure prefill helper
+`_work_to_form` is headless-tested; the manifest write path is
+covered with a byte-exact restore.
+
 ## PARK-IN-^ trial (2026-09-05 evening) — verdict: STILL BROKEN
 
 Per-work tray icon on Hide + click-to-restore + auto-remove, all
