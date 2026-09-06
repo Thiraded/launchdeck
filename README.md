@@ -1,24 +1,44 @@
 # wc-launcher
 
-Single-screen launcher for dev servers and apps on Windows.
-Each work starts **detached** (no console window; output goes to a per-work
-log file with a live color tail viewer in the dashboard).
+![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
+![Python 3](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
+![deps](https://img.shields.io/badge/deps-stdlib_only-brightgreen)
 
-Two frontends, one shared core (`wc_core.py`, stdlib only):
+**One screen to start, watch, and stop every dev server and app you run.**
+No consoles piling up, no forgotten background processes, no "which
+terminal was the API server?" — every work launches **detached**, and the
+dashboard shows what's actually alive right now with a live log tail.
+
+Two frontends, one shared core (`wc_core.py`, zero dependencies):
 
 | Entry | Role |
 |-------|------|
 | `wc.bat` → `wc.py` | Console TUI: Space select, Enter kill/launch |
-| `wctray.bat` → `wctray.py` | Tray + dashboard twin (no console) |
+| `wctray.bat` → `wctray.py` | Tray + dashboard twin (no console window) |
+
+## Why not just more terminals?
+
+- **1 work = 1 managed process tree.** Start/stop from one place instead
+  of hunting windows.
+- **Live detection, not wishful thinking.** The running dot comes from a
+  real process scan every ~2 s — if the port is up, the dot is on.
+- **Logs, not lost scrollback.** Each start truncates to a fresh per-work
+  log with a `[launch …]` marker; the viewer follows in color with
+  clickable URLs.
+- **Safe kill by construction.** Down-only traversal (matches +
+  descendants), a protected launcher chain, dry-run preview. It cannot
+  take your editor, browser, or chat apps with it.
+- **Optional Go accelerator** (`gowc/`) for sub-second scans on loaded
+  machines; pure-Python fallback otherwise.
 
 ## Requirements
 
-- Windows + Python 3 (stdlib only, no pip packages)
-- Optional: Go toolchain to rebuild the `gowc` scan helper
+- Windows + Python 3 (stdlib only — nothing to `pip install`)
+- Optional: Go toolchain to rebuild `gowc.exe`
 
 ## Quickstart
 
-1. Copy this repo, open the dashboard (`wctray.bat`) or console (`wc.bat`).
+1. Clone, open the dashboard (`wctray.bat`) or console (`wc.bat`).
 2. Add your works: dashboard editors (tasks / groups / settings) or edit
    `works.json` directly — one entry per work:
 
@@ -45,6 +65,7 @@ Two frontends, one shared core (`wc_core.py`, stdlib only):
   CommandLine** (e.g. the project dir for `node.exe`, not a window title).
   Detection and kill both key off it.
 - `detect: false` = fire-and-forget (no running state shown).
+- Global hotkey (`alt+w` by default) toggles the dashboard from anywhere.
 
 ## Safety (kill model)
 
@@ -70,7 +91,6 @@ Runtime files (`registry.json`, `wc.settings.txt`, `wc_logs/`,
 ## Branches
 
 - `main` — generic setup (this file's examples). For anyone to copy and use.
-- `personal` — real local config with actual project paths.
 
 ## Docs
 

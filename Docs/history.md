@@ -17,8 +17,9 @@ config `.lnk`s stay on the Desktop by explicit order.
 The GitHub repo was renamed; old URLs redirect. `D:` tracks
 `Thiraded/WorkCombo@main`. Push history: `707be4d` (squashed snapshot
 of the moved+evolved tree), then merge `9c77ea3` joining the pre-move
-history (`-s ours`: tree stays current). Full old history browsable at
-branch `archive/pre-move`. The local Desktop repo keeps the move commit
+history (`-s ours`: tree stays current). The `archive/pre-move` branch was
+dropped in the public cleanup (2026-09-06); old commits survive by hash
+(`3d31430`). The local Desktop repo keeps the move commit
 (`31a3ee0`) but must NOT push (its origin redirects to WorkCombo and
 would collide — leave it local).
 
