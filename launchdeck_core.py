@@ -1,4 +1,4 @@
-"""wc_core.py — pure logic for the work combo (wc) and kill combo (kc) TUIs.
+"""launchdeck_core.py — pure logic for the launchdeck console and dashboard.
 
 Key concepts
 -----------
@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 # Background subprocesses (powershell scans, taskkill) must not flash a
-# console window when wc runs under pythonw (wctray has no console to
+# console window when the deck runs under pythonw (no console to
 # inherit, so Windows pops a visible terminal on EVERY scan otherwise).
 # Works launched via run_work() are EXCLUDED -- those must stay VISIBLE.
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -34,7 +34,7 @@ if not DESKTOP.exists():
     DESKTOP = Path(os.environ.get("USERPROFILE", "")) / "Desktop"
 MANIFEST = HERE / "works.json"
 REGISTRY = HERE / "registry.json"
-SETTINGS = HERE / "wc.settings.txt"
+SETTINGS = HERE / "launchdeck.settings.txt"
 
 # Optional speed helper (pure-stdlib Go, built from gowc/): when gowc.exe sits
 # next to this file, scans/kills go through it (~0.2s vs ~0.9s per spawn).
@@ -262,7 +262,7 @@ def work_display_log_path(work: dict) -> str:
     return work_log_path(work)
 
 
-GEN_BAT_PREFIX = "wc-gen-"
+GEN_BAT_PREFIX = "launchdeck-gen-"
 
 
 def work_vars(work: dict) -> dict:
@@ -307,7 +307,7 @@ def gen_bat_name(work: dict) -> str:
 
 
 def materialize_steps(work: dict, visible: bool = False) -> str:
-    """Write `wc_logs/wc-gen-<id>.bat` from `steps`+`vars`; return its path.
+    """Write `wc_logs/launchdeck-gen-<id>.bat` from `steps`+`vars`; return its path.
 
     The generated file follows the inline launcher shape (title early,
     `set` lines, terminal steps as sequential lines, `app:` steps via
@@ -429,7 +429,7 @@ _SGR_FG = {
 def ansi_runs(text: str) -> list[tuple[str, str | None]]:
     """Split *text* into (segment, fg-name|None) runs from ANSI SGR codes.
 
-    Pure helper for the wctray log viewer (core stays UI-free; the viewer
+    Pure helper for the deck log viewer (core stays UI-free; the viewer
     maps names to widget colors). All non-SGR escapes are stripped,
     unknown SGR codes ignored, bare/malformed ESC dropped.
     """
@@ -498,7 +498,7 @@ def run_work(work: dict) -> None:
         # output ("cache from old log"). The marker delimits runs.
         logf = open(work_log_path(work), "w", encoding="utf-8",
                     errors="replace")
-        logf.write(f"[wc] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
+        logf.write(f"[deck] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
         logf.flush()
         subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
                          stdout=logf, stderr=subprocess.STDOUT,
@@ -1421,7 +1421,7 @@ def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | Non
         realbat = work.get("bat")
         if not realbat or not os.path.exists(realbat):
             return None
-    run_work(work)   # spawns the .bat in its own visible window (per wc_core)
+    run_work(work)   # spawns the .bat in its own visible window (per launchdeck_core)
     _launched_count += 1
     return {"id": wid, "label": work.get("label", wid), "work": work,
             "launched": time.time(), "already": False}

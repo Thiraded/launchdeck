@@ -1,4 +1,4 @@
-"""Head-less integration test for wc_core.
+"""Head-less integration test for launchdeck_core.
 
 Covers the real API as it is wired today:
   * build_model() excludes group members from the top-level model (they live
@@ -14,7 +14,7 @@ import os
 import subprocess
 import time
 
-import wc_core as core
+import launchdeck_core as core
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

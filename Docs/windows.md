@@ -1,6 +1,6 @@
 # Windows (hide / find / close) — owner sets, titles, headless
 
-## Finding a work's windows (`find_work_hwnds`, `wc_core.py`)
+## Finding a work's windows (`find_work_hwnds`, `launchdeck_core.py`)
 
 1. **Seeds**: CommandLine token match over the shared table (minus
    powershell*, NEVER-seed GUI, plus the `.bat` basename + long-enough
@@ -19,11 +19,11 @@
 The up+down expansion is for HIDE/CLOSE (reversible-ish) only.
 Kill stays DOWNWARD-ONLY — see `kill-safety.md`.
 
-## `h` key (wc.py) — minimize to taskbar
+## `h` key (launchdeck.py) — minimize to taskbar
 
 `h` on a running work minimizes its windows (`SW_SHOWMINIMIZED`, normal
 background-app feel — still on taskbar/Alt+Tab) and tracks HWNDs in
-`_minimized_hwnds`; `h` again restores (`SW_RESTORE`). The wc console is
+`_minimized_hwnds`; `h` again restores (`SW_RESTORE`). The deck console is
 never touched. When no window is found it reports
 "running but its window was not found" (see Headless below).
 
@@ -39,7 +39,7 @@ EnumWindows (ruled out); SW_HIDE windows still enumerate — so "no HWND
 at all" always means truly windowless.
 
 Therefore: no "restore" — Stop the work and Start it fresh for a new
-window (wctray's Restart button does exactly this). `h` on
+window (the deck's Restart button does exactly this). `h` on
 running-but-windowless reports not-found (see above).
 
 ## Known gaps (not bugs, documented limits)
@@ -48,5 +48,5 @@ running-but-windowless reports not-found (see above).
   attributed — never touched automatically (ask first).
 - WT-manual runs: guarded out (closing a shared WT window would take
   the user's tabs); process-level kill only.
-- wc.py has no respawn sweep (wctray does): a dev server forking a
+- `launchdeck.py` has no respawn sweep (the deck does): a dev server forking a
   fresh console after minimize leaves the new one visible.

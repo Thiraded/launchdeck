@@ -3,6 +3,6 @@ __pycache__/
 *.log
 wc_logs/
 registry.json
-wc.settings.txt
+launchdeck.settings.txt
 works.local.json
 gowc.exe

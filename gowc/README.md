@@ -1,7 +1,7 @@
-# gowc — fast Win32 helper for the work-combo suite
+# gowc — fast Win32 helper for the launchdeck suite
 
 Stdlib-only Go (`syscall` + `unsafe`, no deps, no network to build).
-`wc_core.py` uses `gowc.exe` when it sits next to it, otherwise falls back
+`launchdeck_core.py` uses `gowc.exe` when it sits next to it, otherwise falls back
 to the powershell scans (same results, ~4x slower per spawn).
 
 ```

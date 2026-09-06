@@ -1,4 +1,4 @@
-"""wc.py — Work Combo (wc) TUI: the ONE tool to manage your works.
+"""launchdeck.py — launchdeck console TUI: the ONE tool to manage your works.
 
 It is BOTH a launcher and a killer (kc was merged in here):
 
@@ -23,7 +23,7 @@ It is info only -- you cannot "cancel" it by keypress; to stop a running work
 you select it [X] and press Enter (which kills the whole process tree AND
 closes the visible window).
 
-Selection is remembered in wc.settings.txt (loaded on start / saved on quit).
+Selection is remembered in launchdeck.settings.txt (loaded on start / saved on quit).
 """
 import os
 import sys
@@ -31,7 +31,7 @@ import threading
 import time
 from pathlib import Path
 
-import wc_core as core
+import launchdeck_core as core
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -116,7 +116,7 @@ def toggle_work_window(node) -> str:
     if not node.is_running():
         return f"'{node.label}' is not running -- nothing to minimize"
     if node.work and node.work.get("run") == "detached":
-        return f"'{node.label}' runs detached (no window) -- log is in wctray"
+        return f"'{node.label}' runs detached (no window) -- log is in the deck"
     hwnds = core.find_work_hwnds(node.work)
     if not hwnds:
         return f"'{node.label}' is running but its window was not found"

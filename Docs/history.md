@@ -62,6 +62,18 @@ hardening); Docs trimmed of capture/disarm/rebirth refs;
 Second rename, picking a pro product name; README gained real screenshots
 (`assets/`: dashboard, log viewer, task editor). Old URLs redirect.
 
+## File rename: `wc-*` -> `launchdeck-*` (2026-09-06)
+
+Entry points + modules renamed for the product name: `launchdeck.py` /
+`launchdeck_dashboard.py` (+ `.bat` launchers), `launchdeck_core.py`,
+`launchdeck_tray.py`, `test_launchdeck_core.py`,
+`launchdeck.settings.txt`, `launchdeck-gen-<id>.bat` prefix,
+`[deck] launch` marker. Election/reaper scans match the new dashboard
+filename (else duplicate trays). Runtime dir `wc_logs/` and local
+`wc-vscode` profile dirs keep their names (invisible, machine-local).
+Outside the repo: `wc-bin` shims repointed, Desktop shortcut is now
+`launchdeck.lnk`.
+
 ## Rename: `Thiraded/WorkCombo` -> `Thiraded/wc-launcher` + public (2026-09-06)
 
 Repo renamed and made public as a reusable launcher. `main` holds a

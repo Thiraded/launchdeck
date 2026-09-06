@@ -2,21 +2,21 @@
 
 ## Gates
 
-- `python test_wc_core.py` passes (model build, detection, group OR,
+- `python test_launchdeck_core.py` passes (model build, detection, group OR,
   kill-via-group, Space OFF->ON -> Enter acts).
 - Headless key-sequence simulation: Space -> `[X]`, Enter ->
   kill/launch, Esc -> quit.
 - **Manual smoke on Windows** (standing gate, still open): open
-  `wc.bat`, Space on a work (`[ ]`->`[X]`), Enter on a running `[-]`
+  `launchdeck.bat`, Space on a work (`[ ]`->`[X]`), Enter on a running `[-]`
   work kills it, Enter on a stopped one launches it. Do NOT claim DONE
   until a human confirms this in the real window.
 - Kill covers the `cmd` host AND child `node.exe` (no zombie windows).
-- wc never hangs the host: single shared scan, background `[-]`
+- The deck never hangs the host: single shared scan, background `[-]`
   monitor (2s), no unbounded loops in the key path.
 
 ## Test policy (live machine — binding)
 
-- **NEVER run `test_wc_core.py` (or any process-spawning test) on a
+- **NEVER run `test_launchdeck_core.py` (or any process-spawning test) on a
   live user machine without explicit confirmation AND no live works
   running.** The harness spawns real `cmd` trees with the same shape
   as production launches; a kill step can sweep user processes

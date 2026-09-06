@@ -1,7 +1,7 @@
 # gowc.exe — Go scan/kill accelerator
 
 Pure-stdlib Go (`syscall` + `unsafe`, no deps, no network to build).
-`wc_core.py` uses `gowc.exe` when it sits next to it, else IDENTICAL
+`launchdeck_core.py` uses `gowc.exe` when it sits next to it, else IDENTICAL
 powershell fallbacks — never a hard dependency.
 
 ## Protocol

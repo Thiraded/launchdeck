@@ -1,6 +1,6 @@
-# Tray (wctray dashboard) — behavior, backlog, trials
+# Tray (deck dashboard) — behavior, backlog, trials
 
-`wctray.py` (via `wctray.bat`, pythonw, no console): tray icon +
+`launchdeck_dashboard.py` (via `launchdeck-tray.bat`, pythonw, no console): tray icon +
 dashboard popup (PowerToys-Workspaces style) with per-work
 Open/Hide/Show/Stop/Restart, [+ New Task], per-work edit/delete
 (writes `works.json`). Hide = true hide (`SW_HIDE`: gone from taskbar
@@ -45,10 +45,10 @@ elsewhere closes everything, clicking one of them keeps all.
 The default for ALL works since 2026-09-06 (user moved the whole
 suite off visible windows). No console at all (`CREATE_NO_WINDOW`);
 output goes to `wc_logs/<id>.log`, and the dashboard shows a log
-viewer instead of Hide/Show (wc console `h` reports "no window"
+viewer instead of Hide/Show (deck console `h` reports "no window"
 for detached works). Viewer rules:
 
-- Fresh log per Start (truncate + `[wc] launch …` marker) — old runs
+- Fresh log per Start (truncate + `[deck] launch …` marker) — old runs
   never pollute the tail.
 - Live follow: 1s poll, new bytes appended only (no full redraw);
   a file shrink means a fresh launch, so the view reloads.
@@ -56,7 +56,7 @@ for detached works). Viewer rules:
   assume a dark console); widget capped at 2000 lines.
 - URLs are clickable (underline + hand cursor, opens the default
   browser) — e.g. vite's `http://localhost:5175/`.
-- Parsing lives in `wc_core.ansi_runs` (pure, tested); `wctray`
+- Parsing lives in `launchdeck_core.ansi_runs` (pure, tested); the deck
   only maps names to colors.
 
 ## ctypes traps (do not regress)
@@ -81,7 +81,7 @@ referenced until `EnumWindows` returns. Diagnostics: `wc_logs/tray.log`.
 - [x] **2. Inline commands + variables** — DONE 2026-09-06.
       Editor has Commands (one per line, `app:` prefix = App step)
       + Vars (`NAME=value`) boxes; core `materialize_steps` writes
-      `wc_logs/wc-gen-<id>.bat` (`set` lines, terminal lines, `app:`
+      `wc_logs/launchdeck-gen-<id>.bat` (`set` lines, terminal lines, `app:`
       via `start`), so launch/log/detect/kill follow the .bat path
       (gen name added to kill tokens). Hamster-Clint migrated first.
       2026-09-06: ALL works are steps+vars, `bat` keys removed from

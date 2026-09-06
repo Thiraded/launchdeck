@@ -29,7 +29,7 @@ deck shows what's actually alive right now, with a live log tail.
 - **Live detection, not wishful thinking.** The running dot comes from a
   real process scan every ~2 s — if the port is up, the dot is on.
 - **Logs, not lost scrollback.** Each start truncates to a fresh per-work
-  log with a `[launch …]` marker; the viewer follows in color with
+  log with a `[deck] launch …` marker; the viewer follows in color with
   clickable URLs.
 - **Safe kill by construction.** Down-only traversal (matches +
   descendants), a protected launcher chain, dry-run preview. It cannot
@@ -37,12 +37,12 @@ deck shows what's actually alive right now, with a live log tail.
 - **Optional Go accelerator** (`gowc/`) for sub-second scans on loaded
   machines; pure-Python fallback otherwise.
 
-Two frontends, one shared core (`wc_core.py`, zero dependencies):
+Two frontends, one shared core (`launchdeck_core.py`, zero dependencies):
 
 | Entry | Role |
 |-------|------|
-| `wc.bat` → `wc.py` | Console TUI: Space select, Enter kill/launch |
-| `wctray.bat` → `wctray.py` | Tray + dashboard twin (no console window) |
+| `launchdeck.bat` → `launchdeck.py` | Console TUI: Space select, Enter kill/launch |
+| `launchdeck-tray.bat` → `launchdeck_dashboard.py` | Tray + dashboard twin (no console window) |
 
 ## Requirements
 
@@ -51,7 +51,7 @@ Two frontends, one shared core (`wc_core.py`, zero dependencies):
 
 ## Quickstart
 
-1. Clone, open the dashboard (`wctray.bat`) or console (`wc.bat`).
+1. Clone, open the dashboard (`launchdeck-tray.bat`) or console (`launchdeck.bat`).
 2. Add your works: dashboard editors (tasks / groups / settings) or edit
    `works.json` directly — one entry per work:
 
@@ -92,14 +92,14 @@ kill. Details: `Docs/kill-safety.md`.
 | Path | Role |
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (edit me) |
-| `wc_core.py` | Shared logic: manifest, detection, run/kill, registry. No UI |
-| `wc.py` / `wctray.py` | The two frontends |
-| `wc_tray.py` | Tray primitives (ctypes only) |
+| `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry. No UI |
+| `launchdeck.py` / `launchdeck_dashboard.py` | The two frontends |
+| `launchdeck_tray.py` | Tray primitives (ctypes only) |
 | `gowc/` | Optional Go scan/kill accelerator (`go build -o ../gowc.exe .` inside) |
 | `assets/` | README screenshots |
 | `Docs/` | All knowledge: architecture, kill-safety, tray, verification |
 
-Runtime files (`registry.json`, `wc.settings.txt`, `wc_logs/`,
+Runtime files (`registry.json`, `launchdeck.settings.txt`, `wc_logs/`,
 `works.local.json`) are local-only and git-ignored — never committed.
 
 ## Branches

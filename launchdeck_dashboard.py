@@ -1,4 +1,4 @@
-"""wctray.py — wc in the Windows system tray (notification area, bottom-right).
+"""launchdeck_dashboard.py — launchdeck in the Windows system tray (notification area, bottom-right).
 
 Click the tray icon -> popup dashboard (PowerToys Workspaces style):
     [icon] label            (o) running / ( ) stopped   [Start/Log/Stop]
@@ -12,7 +12,7 @@ Click the tray icon -> popup dashboard (PowerToys Workspaces style):
     detached mode is the only mode, nothing to hide or show.
   * optional "icon" per work in works.json (emoji, e.g. "icon": "🎮").
 
-Stdlib only (ctypes + tkinter). Run via wctray.bat (pythonw, no console).
+Stdlib only (ctypes + tkinter). Run via launchdeck-tray.bat (pythonw, no console).
 """
 import json
 import os
@@ -30,15 +30,15 @@ import traceback
 from tkinter import filedialog, messagebox
 from pathlib import Path
 
-import wc_core as core
-from wc_tray import TrayIcon, WM_LBUTTONUP, WM_RBUTTONUP, WM_CONTEXTMENU
-from wc_tray import register_hotkey, unregister_hotkey
+import launchdeck_core as core
+from launchdeck_tray import TrayIcon, WM_LBUTTONUP, WM_RBUTTONUP, WM_CONTEXTMENU
+from launchdeck_tray import register_hotkey, unregister_hotkey
 
 HERE = Path(__file__).resolve().parent
-LOG = HERE / "wc_logs" / "wctray.log"
+LOG = HERE / "wc_logs" / "launchdeck-tray.log"
 APP_TIP = "Works"
 
-# ANSI fg name (wc_core.ansi_runs) -> viewer color. Server logs assume a
+# ANSI fg name (launchdeck_core.ansi_runs) -> viewer color. Server logs assume a
 # dark console, so the log viewer is dark too (docker-logs style).
 LOG_FG = {
     "black": "#808080", "red": "#cd3131", "green": "#0dbc79",
@@ -83,20 +83,20 @@ def _open_link(event):
         pass
     return "break"
 
-_SINGLE_PORT = 51237  # wctray single-instance lock (OS releases it on exit)
+_SINGLE_PORT = 51237  # deck single-instance lock (OS releases it on exit)
 _lock_sock = None
 
 
 def am_spawned_twin():
-    """True if another wctray instance should own this boot (we exit).
+    """True if another deck instance should own this boot (we exit).
 
-    Total-order election among all live wctray processes: the OLDEST
+    Total-order election among all live deck processes: the OLDEST
     survives (ties broken by smallest PID); everyone else exits quietly.
     This deterministically kills the uv-venv double-exec twin (always
     younger than its spawner), extra double-clicks, and ghosts of races
     past -- with no timing races and no dialogs. An orphaned twin with
     no older sibling alive takes over (correct failover).
-    Only exact-signature rows count (python exe + wctray.py in cmdline).
+    Only exact-signature rows count (python exe + launchdeck_dashboard.py in cmdline).
     Fail-open (run) if the check itself errors.
     """
     try:
@@ -106,7 +106,7 @@ def am_spawned_twin():
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
              "foreach ($p in (Get-CimInstance Win32_Process -Filter \"Name LIKE 'python%'\") ) "
-             "{ if ($p.CommandLine -like '*wctray.py*') "
+             "{ if ($p.CommandLine -like '*launchdeck_dashboard.py*') "
              "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=25,
             creationflags=getattr(core, "_NO_WINDOW", 0))
@@ -125,7 +125,7 @@ def am_spawned_twin():
             return False  # we are not even listed -- proceed
         for born, pid in elders:
             if born < mine or (born == mine and pid < me):
-                log(f"[election] elder wctray pid={pid} born={born} owns this boot -- exiting")
+                log(f"[election] elder deck pid={pid} born={born} owns this boot -- exiting")
                 return True
     except Exception as e:
         log(f"[election] failed open: {e}")
@@ -133,7 +133,7 @@ def am_spawned_twin():
 
 
 def ensure_single_instance(timeout_s=30):
-    """If another wctray is already running, tell the user and exit.
+    """If another deck instance is already running, tell the user and exit.
 
     Prevents the duplicate-tray-icon trap (clicks landing on a stale
     instance while a second one owns the real state)."""
@@ -214,7 +214,7 @@ def self_test():
     assert core.hotkey_conflicts(
         {"works": [{"id": "a", "hotkey": "ctrl+alt+1"},
                    {"id": "b", "hotkey": "ctrl+alt+1"}]}) == {"ctrl+alt+1": ["a", "b"]}
-    from wc_tray import register_hotkey as _rh, unregister_hotkey as _uh
+    from launchdeck_tray import register_hotkey as _rh, unregister_hotkey as _uh
     hwnd = d.root.winfo_id()
     # A tk window has no wc handler: DefWindowProc's 0 must read as a
     # clean False (never a false-positive success).
@@ -659,7 +659,7 @@ def reap_stillborn_twins(first_delay=60, period=300):
     """Reap only exact-signature stillborn children; log everything.
 
     A child is reaped iff ALL hold: name is python(w).exe, its command
-    line contains wctray.py, its interpreter DIFFERS from ours, and it is
+    line contains launchdeck_dashboard.py, its interpreter DIFFERS from ours, and it is
     older than 90s. Anything unparseable or doubtful is left alone.
     """
     import datetime
@@ -675,7 +675,7 @@ def reap_stillborn_twins(first_delay=60, period=300):
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
                  "$me=" + str(me) + "; foreach ($p in (Get-CimInstance Win32_Process)) "
                  "{ if ($p.ParentProcessId -eq $me -and $null -ne $p.CommandLine "
-                 "-and $p.CommandLine -like '*wctray.py*') "
+                 "-and $p.CommandLine -like '*launchdeck_dashboard.py*') "
                  "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.Name + '|' + $p.ExecutablePath "
                  "+ '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
@@ -862,7 +862,7 @@ class WorkTray(TrayIcon):
 
     def _show_menu(self):
         import ctypes
-        from wc_tray import (MF_STRING, MF_SEPARATOR, TPM_RIGHTBUTTON,
+        from launchdeck_tray import (MF_STRING, MF_SEPARATOR, TPM_RIGHTBUTTON,
                              TPM_RETURNCMD, POINT)
         u32 = ctypes.windll.user32
         manifest = core.load_manifest()
@@ -886,7 +886,7 @@ class WorkTray(TrayIcon):
                 self._menu_ids[cmd2] = (wid, "log")
                 u32.AppendMenuW(hmenu, MF_STRING, cmd2, "      ☰ Log")
         u32.AppendMenuW(hmenu, MF_SEPARATOR, 0, None)
-        u32.AppendMenuW(hmenu, MF_STRING, ID_QUIT, "Quit wctray")
+        u32.AppendMenuW(hmenu, MF_STRING, ID_QUIT, "Quit deck")
         pt = POINT()
         u32.GetCursorPos(ctypes.byref(pt))
         u32.SetForegroundWindow(self.hwnd)
@@ -1728,7 +1728,7 @@ class Dashboard:
 
         Incremental follow (1s poll, new bytes only -- no full redraw, no
         flicker); a shrink means a fresh launch truncated the log, so the
-        view reloads. ANSI colors render via wc_core.ansi_runs tags.
+        view reloads. ANSI colors render via launchdeck_core.ansi_runs tags.
         A work with its own `"log"` key tails that file instead.
         Open = click, close = click again (toggle per work, never
         duplicates): a second click on ☰ closes that work's viewer
@@ -2533,7 +2533,7 @@ class Dashboard:
 
 # --------------------------------------------------------------------------
 def main():
-    log("wctray starting")
+    log("deck starting")
     try:
         import faulthandler
         faulthandler.enable(file=open(LOG, "a", encoding="utf-8"))
@@ -2557,7 +2557,7 @@ def main():
         dash = Dashboard()
         dash.ensure()
         dash._ensure_hotkey()
-        log("wctray ready (tray + dashboard up)")
+        log("deck ready (tray + dashboard up)")
 
         dash.show()  # visible on startup: proves life, teaches where it lives
         try:
@@ -2574,8 +2574,8 @@ def main():
         try:
             r = tk.Tk()
             r.withdraw()
-            messagebox.showerror("wctray crashed",
-                                 "wctray hit an error. See wc_logs/wctray.log")
+            messagebox.showerror("deck crashed",
+                                 "deck hit an error. See wc_logs/launchdeck-tray.log")
             r.destroy()
         except Exception:
             pass

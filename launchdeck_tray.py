@@ -1,6 +1,6 @@
-"""wc_tray.py — system-tray host for wc, using ONLY ctypes (no dependencies).
+"""launchdeck_tray.py — system-tray host for launchdeck, using ONLY ctypes (no dependencies).
 
-Windows already ships the shell tray API; we talk to it directly so wc gains a
+Windows already ships the shell tray API; we talk to it directly so launchdeck gains a
 system-tray icon + show/hide without pulling in pystray/Pillow.
 
 Public surface:
@@ -14,14 +14,14 @@ Public surface:
     .available                   # True if a console+tray could be created
 
 Behavior (per user decision 2026-08-30):
-  * Clicking the X on the wc console really quits (safe).
-  * "h" in wc hides the console to the tray; the tray icon (left-click toggles,
+  * Clicking the X on the deck console really quits (safe).
+  * "h" in the console hides it to the tray; the tray icon (left-click toggles,
     right-click menu = Show / Hide / Quit) brings it back.
-  * When a launched work is detected as running, wc fires a balloon so the user
+  * When a launched work is detected as running, the deck fires a balloon so the user
     knows "it opened" without having to open the window.
 
 Everything is wrapped: if the tray can't be created (headless / no explorer),
-wc keeps running normally and hiding is simply a no-op.
+the deck keeps running normally and hiding is simply a no-op.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -30,7 +30,7 @@ import time
 import os as _os
 import traceback as _tb
 
-# diagnostic log (independent of wc_core) so failures are visible
+# diagnostic log (independent of launchdeck_core) so failures are visible
 _TRAY_LOG_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "wc_logs")
 _TRAY_LOG_PATH = _os.path.join(_TRAY_LOG_DIR, "tray.log")
 
@@ -901,7 +901,7 @@ class TrayIcon:
     def _resolve_console(self):
         """Re-fetch GetConsoleWindow() if we don't have one yet (handles the
         case where wc was launched from a launcher that hadn't attached a
-        console yet, or via wc.bat which gives us one very early)."""
+        console yet, or via launchdeck.bat which gives us one very early)."""
         if not self.console_hwnd and _HAVE_WIN:
             try:
                 self.console_hwnd = kernel32.GetConsoleWindow() or None
@@ -992,7 +992,7 @@ class TrayIcon:
 
 if __name__ == "__main__":
     # tiny self-demo so you can verify the tray without wc:
-    #   python wc_tray.py
+    #   python launchdeck_tray.py
     t = TrayIcon(tip="wc tray demo")
     if not t.start():
         print("tray not available in this environment")

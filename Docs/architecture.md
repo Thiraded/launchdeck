@@ -1,11 +1,12 @@
 # Architecture — how the suite fits together
 
-Entry points: `wc.bat` (console TUI `wc.py`) and `wctray.bat`
-(dashboard `wctray.py`, pythonw, no console). All logic lives in
-`wc_core.py` (no UI); both frontends funnel through `launch_work` /
-`kill_work`, so a fix in core covers every Start/Stop path.
+Entry points: `launchdeck.bat` (console TUI `launchdeck.py`) and
+`launchdeck-tray.bat` (dashboard `launchdeck_dashboard.py`, pythonw,
+no console). All logic lives in `launchdeck_core.py` (no UI); both
+frontends funnel through `launch_work` / `kill_work`, so a fix in
+core covers every Start/Stop path.
 
-## State tokens (`wc_core.py`)
+## State tokens (`launchdeck_core.py`)
 
 ```
 OFF   " "   [ ]  not selected
@@ -32,13 +33,13 @@ it matters). `WINDOWTITLE` is not used — see `requirements.md`.
 
 Default is `"run": "detached"`: NO console at all (`CREATE_NO_WINDOW`),
 the same `.bat` runs, stdout/stderr go to `wc_logs/<id>.log` (fresh per
-Start + `[wc] launch` marker), stdin is NUL. The wctray log viewer is
+Start + `[deck] launch` marker), stdin is NUL. The deck log viewer is
 the docker-logs equivalent (live 1s follow, ANSI colors); a work with
 its own `"log"` key tails that file instead. Visible mode
 (`cmd.exe /c start "" <bat>`, exactly one `""` title placeholder — a
 stray second `""` once made it open Explorer instead) remains for
 works without the key. `register(work)` records
-`{label, bat, launched}` into `registry.json`. wc never auto-closes after launch;
+`{label, bat, launched}` into `registry.json`. The deck never auto-closes after launch;
 it is a persistent manager.
 
 `_launched_count` / `MAX_LAUNCHES` caps total spawns per session.
@@ -57,12 +58,12 @@ Group selected <=> any child selected (pure OR). Space on a group
 toggles ALL children; clearing any child clears the group. Works that
 are group members never render standalone.
 
-## wc.py behavior
+## launchdeck.py behavior
 
 Cursor nav (Up/Down), `Space`/`t` toggles `[ ]`<->`[X]`, `Enter` acts on
 every `[X]` (kill if `[-]`, else launch), `h` minimizes the cursor's
 work window (see `windows.md`),
-`Esc`/`q` quits (saves `wc.settings.txt` preset). Live `[-]` from the
+`Esc`/`q` quits (saves `launchdeck.settings.txt` preset). Live `[-]` from the
 background thread; Enter trusts the visible cache over a fresh scan
 (a failed scan must never turn a kill into an accidental launch).
 

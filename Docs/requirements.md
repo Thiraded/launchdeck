@@ -6,14 +6,14 @@ to conflict with one, stop and ask instead of working around it.
 ## UI
 - **Inline-tree UI**: one column, `SPACE` indentation for group members.
   Never a two-pane layout.
-- `wc` is the entry point users launch (via `wc.bat` / Desktop `wc.lnk`).
+- `launchdeck` is the entry point users launch (via `launchdeck.bat` / Desktop `launchdeck.lnk`).
 
 ## Launch
 - Works launch via `.bat` files with `"run": "detached"` (no console
   window; 2026-09-06 the user moved ALL works off visible windows to
   the hamster-server docker-logs model — this supersedes the old
   VISIBLE-window rule below, kept for history).
-  Output goes to `wc_logs/<id>.log` (fresh per Start) and the wctray
+  Output goes to `wc_logs/<id>.log` (fresh per Start) and the deck
   log viewer tails it live with ANSI colors (see `tray.md`).
   A work with its own `"log"` key tails that file instead.
 - ONE window per work *when a window exists at all* (GUI apps still

@@ -9,30 +9,29 @@
 ## What this is
 
 Single-screen launcher that starts/stops dev servers and apps. Each
-work is a Windows `.bat` run DETACHED (no console; output to
-`wc_logs/`, live color tail in the dashboard viewer). `wc` (console
-TUI: Space select, Enter kill/launch, `h` minimize-or-detached-note)
-does both jobs; `wctray` (dashboard, pythonw) is the
-tray twin. `kc` is dead — do not resurrect. Details: `Docs/architecture.md`.
+work runs DETACHED (no console; output to `wc_logs/`, live color tail
+in the dashboard viewer). `launchdeck` (console TUI: Space select,
+Enter kill/launch) and `launchdeck-tray` (dashboard, pythonw) are the
+two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md`.
 
 ## Layout
 
 | Path | Role |
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (id/label/bat/match/detect). |
-| `wc_core.py` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. |
-| `wc.py` / `wctray.py` (`wc.bat`, `wctray.bat`) | The two frontends (funnel through core). |
-| `wc_tray.py` | Tray primitives (ctypes only). Reference; see `Docs/tray.md`. |
-| `*start.bat`, `GPT MCP.bat` | Per-work launchers (inline template, see `Docs/bat-template.md`). |
+| `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. |
+| `launchdeck.py` / `launchdeck_dashboard.py` (`launchdeck.bat`, `launchdeck-tray.bat`) | The two frontends (funnel through core). |
+| `launchdeck_tray.py` | Tray primitives (ctypes only). Reference; see `Docs/tray.md`. |
+| `launchdeck-gen-<id>.bat` (in `wc_logs/`, generated) | Per-work runners, materialized from manifest steps (see `Docs/bat-template.md`). |
 | `hermess.bat` | Hermes launcher (moved in here; shimmed from `wc-bin`). |
 | `gowc/` + `gowc.exe` | Optional Go scan/kill accelerator (see `Docs/gowc.md`). |
 | `registry.json` | Runtime: launches, hidden tracking. Churns; normal. |
-| `wc.settings.txt` | Selection preset. |
-| `test_wc_core.py`, `test_tray_foundation.py` | Tests (policy in `Docs/verification.md`). |
+| `launchdeck.settings.txt` | Selection preset. |
+| `test_launchdeck_core.py`, `test_tray_foundation.py` | Tests (policy in `Docs/verification.md`). |
 | `Docs/` | ALL knowledge (below). `spec-*.md` history stays at root. |
 
-Outside the repo: Desktop keeps only `wc.lnk`; `%LOCALAPPDATA%\wc-bin`
-holds the `wc` / `wctray` / `hermess` shims.
+Outside the repo: Desktop keeps only `launchdeck.lnk`; `%LOCALAPPDATA%\wc-bin`
+holds the `launchdeck` / `launchdeck-tray` / `hermess` shims.
 
 ## Docs (read these before touching the area)
 
@@ -41,7 +40,7 @@ holds the `wc` / `wctray` / `hermess` shims.
 - `Docs/bat-template.md` — the one true launcher shape + titles.
 - `Docs/kill-safety.md` — DOWN-ONLY, protected set, dry_run, passes, traps.
 - `Docs/windows.md` — find/hide/close, headless doctrine.
-- `Docs/tray.md` — wctray behavior, backlog, PARK trial.
+- `Docs/tray.md` — deck behavior, backlog, PARK trial.
 - `Docs/gowc.md` — Go helper protocol, numbers, rebuild.
 - `Docs/verification.md` — gates + live-machine test policy.
 - `Docs/history.md` — moves, rename, incidents.
