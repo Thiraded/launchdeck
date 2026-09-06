@@ -57,6 +57,11 @@ hardening); Docs trimmed of capture/disarm/rebirth refs;
 `wc_logs/*.log` untracked (`.track.bat` + `registry.json` stay tracked).
 `hermess.bat` kept (live shim points at it).
 
+## Rename: `Thiraded/wc-launcher` -> `Thiraded/launchdeck` (2026-09-06)
+
+Second rename, picking a pro product name; README gained real screenshots
+(`assets/`: dashboard, log viewer, task editor). Old URLs redirect.
+
 ## Rename: `Thiraded/WorkCombo` -> `Thiraded/wc-launcher` + public (2026-09-06)
 
 Repo renamed and made public as a reusable launcher. `main` holds a

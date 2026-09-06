@@ -1,20 +1,26 @@
-# wc-launcher
+<p align="center">
+  <h1 align="center">launchdeck</h1>
+  <p align="center"><b>One screen to start, watch, and stop every dev server and app you run.</b></p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows" />
+    <img src="https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white" alt="Python 3" />
+    <img src="https://img.shields.io/badge/deps-stdlib_only-brightgreen" alt="stdlib only" />
+  </p>
+</p>
 
-![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
-![Python 3](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
-![deps](https://img.shields.io/badge/deps-stdlib_only-brightgreen)
-
-**One screen to start, watch, and stop every dev server and app you run.**
-No consoles piling up, no forgotten background processes, no "which
+No consoles piling up. No forgotten background processes. No "which
 terminal was the API server?" — every work launches **detached**, and the
-dashboard shows what's actually alive right now with a live log tail.
+deck shows what's actually alive right now, with a live log tail.
 
-Two frontends, one shared core (`wc_core.py`, zero dependencies):
+<p align="center">
+  <img src="assets/dashboard.png" alt="launchdeck dashboard" />
+  <br /><i>The deck: groups, live running state, per-row actions.</i>
+</p>
 
-| Entry | Role |
-|-------|------|
-| `wc.bat` → `wc.py` | Console TUI: Space select, Enter kill/launch |
-| `wctray.bat` → `wctray.py` | Tray + dashboard twin (no console window) |
+| | |
+|---|---|
+| <img src="assets/log-viewer.png" alt="log viewer" /> | <img src="assets/task-editor.png" alt="task editor" /> |
+| <i>Live color log tail with clickable links.</i> | <i>New-task editor: commands, vars, match token.</i> |
 
 ## Why not just more terminals?
 
@@ -30,6 +36,13 @@ Two frontends, one shared core (`wc_core.py`, zero dependencies):
   take your editor, browser, or chat apps with it.
 - **Optional Go accelerator** (`gowc/`) for sub-second scans on loaded
   machines; pure-Python fallback otherwise.
+
+Two frontends, one shared core (`wc_core.py`, zero dependencies):
+
+| Entry | Role |
+|-------|------|
+| `wc.bat` → `wc.py` | Console TUI: Space select, Enter kill/launch |
+| `wctray.bat` → `wctray.py` | Tray + dashboard twin (no console window) |
 
 ## Requirements
 
@@ -83,6 +96,7 @@ kill. Details: `Docs/kill-safety.md`.
 | `wc.py` / `wctray.py` | The two frontends |
 | `wc_tray.py` | Tray primitives (ctypes only) |
 | `gowc/` | Optional Go scan/kill accelerator (`go build -o ../gowc.exe .` inside) |
+| `assets/` | README screenshots |
 | `Docs/` | All knowledge: architecture, kill-safety, tray, verification |
 
 Runtime files (`registry.json`, `wc.settings.txt`, `wc_logs/`,
