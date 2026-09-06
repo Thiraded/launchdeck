@@ -1,8 +1,13 @@
 __pycache__/
 *.pyc
+*.pyo
 *.log
+*.tmp
+desktop.ini
+.DS_Store
 wc_logs/
 registry.json
+works.json
 launchdeck.settings.txt
-works.local.json
 gowc.exe
+*.exe

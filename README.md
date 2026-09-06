@@ -104,7 +104,7 @@ Runtime files (`registry.json`, `launchdeck.settings.txt`, `wc_logs/`,
 
 ## Branches
 
-- `main` — generic setup (this file's examples). For anyone to copy and use.
+- `main` — the only branch. `works.json` is git-ignored and yours alone.
 
 ## Docs
 

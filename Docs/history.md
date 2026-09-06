@@ -62,6 +62,15 @@ hardening); Docs trimmed of capture/disarm/rebirth refs;
 Second rename, picking a pro product name; README gained real screenshots
 (`assets/`: dashboard, log viewer, task editor). Old URLs redirect.
 
+## One branch + brutal gitignore (2026-09-06)
+
+Two branches for one machine's config was pure overhead, and a
+`works.example.json` template was rejected as ceremony. Now: single
+`main`; `.gitignore` covers everything machine-local (`works.json`,
+`registry.json`, settings, logs, exes) — fresh clones start from an
+empty manifest and add works via the dashboard editors. Local
+`personal` branch deleted (real config stayed on disk, never pushed).
+
 ## File rename: `wc-*` -> `launchdeck-*` (2026-09-06)
 
 Entry points + modules renamed for the product name: `launchdeck.py` /
@@ -76,9 +85,9 @@ Outside the repo: `wc-bin` shims repointed, Desktop shortcut is now
 
 ## Rename: `Thiraded/WorkCombo` -> `Thiraded/wc-launcher` + public (2026-09-06)
 
-Repo renamed and made public as a reusable launcher. `main` holds a
-generic `works.json` (examples only) + `README.md`; real local paths live
-on branch `personal`. Removed from tracking: 9 legacy `.bat` launchers
+Repo renamed and made public as a reusable launcher. Single `main`
+(code + docs + README); personal `works.json` stays on disk
+(git-ignored, never pushed). Removed from tracking: 9 legacy `.bat` launchers
 (batless config since the steps migration), `gowc.exe` (rebuild via
 `go build` in `gowc/`), `spikes/` scratch, runtime files (`registry.json`,
 `wc.settings.txt`, `wc_logs/*.track.bat` — local-only, git-ignored).
