@@ -52,17 +52,28 @@ referenced until `EnumWindows` returns. Diagnostics: `wc_logs/tray.log`.
 - [x] **1. Hide is broken** — FIXED 2026-09-05 (owner set = seeds +
       bounded ancestors + 1 child level; NEVER-seed GUI after `omniroute`
       matched Brave via tab URL; omniroute `hwnds=0` was the same bug).
-- [ ] **2. Inline commands + variables** — New Task should accept typed
-      commands, not just `.bat` files. Design: `steps` + `vars` with
-      `%VAR%` expansion, Terminal vs App step types. Scope: hamster
-      combo first, migrate the rest, then delete the `.bat` launchers.
-      Detection `match` tokens stay CommandLine-based.
-- [ ] **3. New Group** — create (label + member works), rename, delete.
-      Persisted in `works.json`.
-- [ ] **4. Dashboard scroll** — content cut at Midnight-Rider combo;
-      `<MouseWheel>` binding + region check so all 8 works reach.
-- [ ] **5. Real popup behavior** — auto-dismiss on focus loss, pinned
-      near tray; editor dialogs must not trigger dismiss.
+- [x] **2. Inline commands + variables** — DONE 2026-09-06.
+      Editor has Commands (one per line, `app:` prefix = App step)
+      + Vars (`NAME=value`) boxes; core `materialize_steps` writes
+      `wc_logs/wc-gen-<id>.bat` (`set` lines, terminal lines, `app:`
+      via `start`), so launch/log/detect/kill follow the .bat path
+      (gen name added to kill tokens). Hamster-Clint migrated first.
+      2026-09-06: ALL works are steps+vars, `bat` keys removed from
+      config (files remain on disk, unused).
+- [x] **3. New Group** — DONE 2026-09-06 (`+ Group` button, per-group
+      rename/delete, label + member checklist dialog, `core.save_manifest`
+      as the single writer; delete keeps works standalone).
+- [x] **4. Dashboard scroll** — FIXED 2026-09-06 (root cause was NOT
+      a missing scrollbar: content renders fully, 981px in a 600px
+      window, but `<MouseWheel>` was never bound so the wheel did
+      nothing and the thin dark bar looked absent. Fix: wheel bound
+      on the toplevel, inner frame tracks canvas width, explicit
+      scrollregion + view clamp after every rebuild; `self_test`
+      asserts region + wheel binding).
+- [x] **5. Real popup behavior** — DONE 2026-09-06 (`<FocusOut>` +
+      delayed tree check dismisses only when focus leaves the whole
+      dashboard tree — editor/log dialogs are child Toplevels so they
+      keep it open; re-pinned bottom-right on every show).
 
 ## PARK-IN-^ trial (2026-09-05 evening) — verdict: STILL BROKEN
 

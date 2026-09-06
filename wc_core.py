@@ -133,6 +133,13 @@ def kill_tokens_for(work: dict) -> list[str]:
     # when it is specific enough to be safe.
     if wid and wid not in toks and len(wid) >= 4:
         toks.append(wid)
+    # Steps-works run a generated .bat (materialize_steps): its wrapper
+    # CommandLine carries the gen name, so seed it exactly like a .bat
+    # basename (deterministic -- computable here without launching).
+    if work.get("steps"):
+        gen = gen_bat_name(work)
+        if gen not in toks:
+            toks.append(gen)
     return toks
 
 
@@ -255,6 +262,152 @@ def work_display_log_path(work: dict) -> str:
     return work_log_path(work)
 
 
+GEN_BAT_PREFIX = "wc-gen-"
+
+
+def work_vars(work: dict) -> dict:
+    """`vars` mapping for a steps-work (NAME -> value, both strings)."""
+    raw = work.get("vars") or {}
+    return {str(k): str(v) for k, v in raw.items() if str(k).strip()}
+
+
+_VAR_RE = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
+
+
+def expand_work_vars(text: str, work: dict) -> str:
+    """Expand %NAME% from the work's `vars`, then process environ.
+
+    Nested refs resolve recursively (a var value may itself contain
+    %REFS%, e.g. OLOG built on LOGDIR built on %LOCALAPPDATA%), with a
+    cycle guard that leaves circular refs intact. Unknown names are
+    left intact (cmd.exe gets its own chance at them at runtime).
+    Precedence is vars-first: a var shadows the process environ.
+    Used for previews/tests -- execution relies on `set` lines in the
+    generated .bat instead (single expansion, no doubles).
+    """
+    vs = work_vars(work)
+
+    def _resolve(name, seen):
+        if name in seen:
+            return "%" + name + "%"
+        if name in vs:
+            return _VAR_RE.sub(lambda m: _resolve(m.group(1), seen | {name}),
+                               vs[name])
+        return os.environ.get(name, "%" + name + "%")
+
+    return _VAR_RE.sub(lambda m: _resolve(m.group(1), frozenset()),
+                       str(text))
+
+
+def gen_bat_name(work: dict) -> str:
+    """Deterministic generated-.bat basename for a steps-work."""
+    wid = work.get("id", "work")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in wid)
+    return GEN_BAT_PREFIX + safe + ".bat"
+
+
+def materialize_steps(work: dict, visible: bool = False) -> str:
+    """Write `wc_logs/wc-gen-<id>.bat` from `steps`+`vars`; return its path.
+
+    The generated file follows the inline launcher shape (title early,
+    `set` lines, terminal steps as sequential lines, `app:` steps via
+    `start ""`). Terminal steps run PLAIN in detached mode (no window
+    to keep open); in visible mode the LAST terminal step is wrapped
+    in `cmd /k` (mirrors the template). CRLF, like hand-written bats.
+    """
+    steps = work.get("steps") or []
+    label = work.get("label", work.get("id", "work"))
+    # NO `setlocal` here -- on purpose (2026-09-06 trap): npm.cmd ends
+    # with `goto` to a nonexistent label, and that failed-goto unwinds
+    # the whole setlocal stack, reverting cwd to the pre-cd directory
+    # before node spawns (proven: identical bat +/- setlocal = works /
+    # ENOENT at the launcher dir). Hand bats are immune only because
+    # they run npm under `cmd /k` (fresh child cmd). Vars leaking into
+    # our own throwaway wrapper is harmless.
+    lines = ["@echo off"]
+    # Values are pre-expanded here (nested refs resolved once): cmd.exe
+    # expands %REFS% single-pass at runtime, so a stored value like
+    # %LOGDIR% inside OLOG would otherwise survive literally.
+    for k, v in work_vars(work).items():
+        lines.append("set " + chr(34) + k + "=" + expand_work_vars(v, work) + chr(34))
+    lines.append(f"title {label}")
+    terms = [s for s in steps if (s.get("type") or "terminal") == "terminal"]
+    last_term = terms[-1] if terms else None
+    for s in steps:
+        cmd = str(s.get("cmd", "")).strip()
+        if not cmd:
+            continue
+        if (s.get("type") or "terminal") == "app":
+            lines.append(f'start "" {cmd}')
+        elif visible and s is last_term:
+            lines.append(f'cmd /k "{cmd}"')
+        else:
+            lines.append(cmd)
+    lines.append("exit /b 0")
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wc_logs")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, gen_bat_name(work))
+    with open(path, "w", encoding="utf-8", errors="replace", newline="") as f:
+        CRLF = chr(13) + chr(10)
+        f.write(CRLF.join(lines) + CRLF)
+    return path
+
+
+def parse_steps_text(text: str) -> list[dict]:
+    """Parse editor steps: one command per line.
+
+    Lines starting with 'app:' (case-insensitive) become App steps
+    (GUI launch via start); everything else is a Terminal step.
+    Blank lines are skipped.
+    """
+    out = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line[:4].lower() == "app:":
+            cmd = line[4:].strip()
+            if cmd:
+                out.append({"type": "app", "cmd": cmd})
+        else:
+            out.append({"type": "terminal", "cmd": line})
+    return out
+
+
+def parse_vars_text(text: str) -> dict:
+    """Parse editor vars: NAME=value per line; blanks and #-comments skipped."""
+    out = {}
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name = name.strip()
+        if name:
+            out[name] = value.strip()
+    return out
+
+
+def steps_to_text(steps) -> str:
+    """Editor prefill: steps back to one-command-per-line form."""
+    lines = []
+    for s in steps or []:
+        cmd = str((s or {}).get("cmd", "")).strip()
+        if not cmd:
+            continue
+        if ((s or {}).get("type") or "terminal") == "app":
+            lines.append("app: " + cmd)
+        else:
+            lines.append(cmd)
+    return chr(10).join(lines)
+
+
+def vars_to_text(vars) -> str:
+    """Editor prefill: vars back to NAME=value per line."""
+    return chr(10).join(
+        str(k) + "=" + str(v) for k, v in (vars or {}).items())
+
+
 _ANSI_ESC_RE = re.compile(
     r"\x1b\[([0-9;?]*)([@-~])"            # CSI (SGR when the final byte is 'm')
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC ... ST
@@ -313,8 +466,19 @@ def run_work(work: dict) -> None:
     wc's own console), and the .bat MUST be the §4.8 inline shape
     (`cd` -> `cls` -> `cmd /k`, no nested `start`) so a second window
     never appears. Registers it too."""
+    steps = work.get("steps") or []
     bat = work.get("bat")
-    if not bat or not os.path.exists(bat):
+    gen = ""
+    if steps:
+        # Inline steps (backlog #2): materialize to a generated .bat so
+        # execution, logging, detection and kill follow the SAME path as
+        # .bat works. The stored `bat` (if any) is only a fallback.
+        try:
+            gen = materialize_steps(work, visible=work.get("run") != "detached")
+        except Exception:
+            gen = ""
+    runner = gen or bat
+    if not runner or not os.path.exists(runner):
         return
     # Windows `start` treats the FIRST quoted token as the window title.
     # A single `""` is the title placeholder; the NEXT token is the command.
@@ -334,15 +498,15 @@ def run_work(work: dict) -> None:
         # output ("cache from old log"). The marker delimits runs.
         logf = open(work_log_path(work), "w", encoding="utf-8",
                     errors="replace")
-        logf.write(f"[wc] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {bat}\n")
+        logf.write(f"[wc] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
         logf.flush()
-        subprocess.Popen(["cmd.exe", "/c", bat], shell=False,
+        subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
                          stdout=logf, stderr=subprocess.STDOUT,
                          stdin=subprocess.DEVNULL,
                          creationflags=_NO_WINDOW)
         register(work)
         return
-    subprocess.Popen(["cmd.exe", "/c", "start", "", bat], shell=False)
+    subprocess.Popen(["cmd.exe", "/c", "start", "", runner], shell=False)
     register(work)
 
 
@@ -1251,9 +1415,12 @@ def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | Non
         return None
     if _launched_count >= MAX_LAUNCHES:
         return None
-    realbat = work.get("bat")
-    if not realbat or not os.path.exists(realbat):
-        return None
+    # Steps-works (backlog #2) materialize their own runner inside
+    # run_work; `bat`, when present, is only a fallback for them.
+    if not work.get("steps"):
+        realbat = work.get("bat")
+        if not realbat or not os.path.exists(realbat):
+            return None
     run_work(work)   # spawns the .bat in its own visible window (per wc_core)
     _launched_count += 1
     return {"id": wid, "label": work.get("label", wid), "work": work,
@@ -1279,6 +1446,23 @@ def _scan_error(text: str) -> str:
         if kw in low:
             return kw
     return ""
+
+
+def slug_group_id(label, manifest=None):
+    """Slugged group id, unique within the manifest's groups."""
+    stem = "".join(c.lower() if c.isalnum() else "-" for c in str(label)).strip("-")[:24].strip("-")
+    base = ("g-" + stem) if stem else "g-group"
+    taken = {g.get("id") for g in (manifest or {}).get("groups", [])}
+    gid, n = base, 2
+    while gid in taken:
+        gid = "g-" + stem + "-" + str(n) if stem else "g-group-" + str(n)
+        n += 1
+    return gid
+
+
+def save_manifest(manifest) -> None:
+    """Write works.json -- the single writer for editor/group/delete ops."""
+    MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # Status values returned by poll_launch:

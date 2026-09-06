@@ -4,84 +4,183 @@
     {
       "id": "hamstercombo",
       "label": "Hamster combo",
-      "members": ["hamster-server", "hamster-clint", "hamsterquest"]
+      "members": [
+        "hamster-server",
+        "hamster-clint",
+        "hamsterquest"
+      ]
     },
     {
       "id": "midnightcombo",
       "label": "Midnight-Rider combo",
-      "members": ["mr-unity", "mr-vscode"]
+      "members": [
+        "mr-vscode",
+        "mr-unity"
+      ]
     },
     {
       "id": "omniroutecombo",
       "label": "OmniRoute combo",
-      "members": ["omniroute-cli", "omniroute-web"]
+      "members": [
+        "omniroute-cli",
+        "omniroute-web"
+      ]
     }
   ],
   "works": [
     {
-      "id": "hamster-server",
-      "label": "Hamster-Server start",
-      "bat": "D:\\workcombo\\Hamster-Server start.bat",
-      "match": "D:\\projects\\HamsterWorld\\server",
-      "run": "detached",
-      "detect": true
-    },
-    {
       "id": "hamster-clint",
       "label": "Hamster-Clint start",
       "run": "detached",
-      "bat": "D:\\workcombo\\Hamster-Clint start.bat",
+      "vars": {
+        "APPDIR": "D:\\projects\\HamsterWorld\\backoffice",
+        "PORT": "5175"
+      },
+      "steps": [
+        {
+          "type": "terminal",
+          "cmd": "cd /d \"%APPDIR%\""
+        },
+        {
+          "type": "terminal",
+          "cmd": "npm run dev -- --host 0.0.0.0 --port %PORT% --strictPort"
+        }
+      ],
       "match": "D:\\projects\\HamsterWorld\\backoffice",
       "detect": true
+    },
+    {
+      "id": "hamster-server",
+      "label": "Hamster-Server start",
+      "match": "D:\\projects\\HamsterWorld\\server",
+      "run": "detached",
+      "detect": true,
+      "vars": {
+        "APPDIR": "D:\\projects\\HamsterWorld\\server"
+      },
+      "steps": [
+        {
+          "type": "terminal",
+          "cmd": "cd /d \"%APPDIR%\""
+        },
+        {
+          "type": "terminal",
+          "cmd": "npm run dev"
+        }
+      ]
     },
     {
       "id": "hamsterquest",
       "label": "Hamsterquest start",
       "run": "detached",
-      "bat": "D:\\workcombo\\Hamsterquest start.bat",
       "match": "D:\\projects\\Hamsquest",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "APPDIR": "D:\\projects\\Hamsquest"
+      },
+      "steps": [
+        {
+          "type": "terminal",
+          "cmd": "cd /d \"%APPDIR%\""
+        },
+        {
+          "type": "terminal",
+          "cmd": "npm run dev"
+        }
+      ]
     },
     {
       "id": "mr-unity",
       "label": "Midnight-Rider Unity start",
       "run": "detached",
-      "bat": "D:\\workcombo\\Midnight-Rider Unity start.bat",
       "match": "Unity Hub.exe",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "PROJECT": "D:\\Midnight-Rider",
+        "HUB": "C:\\Program Files\\Unity Hub\\Unity Hub.exe"
+      },
+      "steps": [
+        {
+          "type": "app",
+          "cmd": "\"%HUB%\" -- --projectPath \"%PROJECT%\""
+        }
+      ],
+      "icon": "⚡"
     },
     {
       "id": "mr-vscode",
       "label": "Midnight-Rider VSCode start",
       "run": "detached",
-      "bat": "D:\\workcombo\\Midnight-Rider VSCode start.bat",
       "match": "Code.exe",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "PROJECT": "D:\\Midnight-Rider",
+        "CODE": "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
+      },
+      "steps": [
+        {
+          "type": "app",
+          "cmd": "\"%CODE%\" \"%PROJECT%\""
+        }
+      ]
     },
     {
       "id": "omniroute-cli",
       "label": "OmniRoute CLI start",
       "run": "detached",
-      "bat": "D:\\workcombo\\OmniRoute CLI start.bat",
       "match": "omniroute",
       "log": "%LOCALAPPDATA%\\bg-launcher-logs\\bg-omniroute-cli.log",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "LOGDIR": "%LOCALAPPDATA%\\bg-launcher-logs",
+        "OLOG": "%LOGDIR%\\bg-omniroute-cli.log"
+      },
+      "steps": [
+        {
+          "type": "terminal",
+          "cmd": "mkdir \"%LOGDIR%\" 2>nul"
+        },
+        {
+          "type": "terminal",
+          "cmd": "omniroute > \"%OLOG%\" 2>&1"
+        }
+      ]
     },
     {
       "id": "omniroute-web",
       "label": "OmniRoute Web start",
       "run": "detached",
-      "bat": "D:\\workcombo\\OmniRoute Web start.bat",
       "match": "OmniRoute AI Gateway.lnk",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "GATEWAY_LNK": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Brave Apps\\OmniRoute AI Gateway.lnk"
+      },
+      "steps": [
+        {
+          "type": "app",
+          "cmd": "\"%GATEWAY_LNK%\""
+        }
+      ]
     },
     {
       "id": "gpt-mcp",
       "label": "GPT MCP start",
       "run": "detached",
-      "bat": "D:\\workcombo\\GPT MCP.bat",
       "match": "modelcontextprotocol/inspector",
-      "detect": true
+      "detect": true,
+      "vars": {
+        "APPDIR": "D:\\Midnight-Rider"
+      },
+      "steps": [
+        {
+          "type": "terminal",
+          "cmd": "cd /d \"%APPDIR%\""
+        },
+        {
+          "type": "terminal",
+          "cmd": "npx -y @modelcontextprotocol/inspector npx -y @modelcontextprotocol/server-filesystem \"%APPDIR%\""
+        }
+      ]
     }
   ]
 }

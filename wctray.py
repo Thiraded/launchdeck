@@ -161,6 +161,28 @@ def self_test():
     d.refresh()
     d.root.update_idletasks()
     print(f"self-test: dashboard rows: {len(d.list_frame.winfo_children())}")
+    cv = d.list_frame.master
+    assert cv.cget("scrollregion") not in ("", "0 0 0 0"), cv.cget("scrollregion")
+    assert d.root.bind("<MouseWheel>"), "wheel binding missing (backlog #4)"
+    print(f"self-test: scrollregion {cv.cget('scrollregion')} + wheel OK")
+    w = next(x for x in manifest["works"] if x.get("id") == "hamster-clint")
+    ed = d.open_editor(w)
+    d.root.update_idletasks()
+    assert ed is not None and ed.winfo_exists(), "editor did not build"
+    ed.destroy()
+    print("self-test: editor (steps prefill) OK")
+    man = core.load_manifest()
+    assert core.slug_group_id("Hamster combo", man) != "hamstercombo"
+    assert core.slug_group_id("New Group", man) == "g-new-group"
+    ged = d.open_group_editor(None)
+    d.root.update_idletasks()
+    assert ged is not None and ged.winfo_exists(), "group editor did not build"
+    ged.destroy()
+    print("self-test: group editor + slug OK")
+    assert d.root.bind("<FocusOut>"), "popup dismiss binding missing (backlog #5)"
+    d._maybe_autodismiss()  # hidden popup: must no-op, never raise
+    assert d.visible is False
+    print("self-test: popup dismiss wiring OK")
     d.root.destroy()
     print("SELF-TEST OK")
     return 0
@@ -550,6 +572,7 @@ class Dashboard:
         self.root = None
         self.status_var = None
         self.list_frame = None
+        self._canvas = None
         self.visible = False
 
     def ensure(self):
@@ -574,6 +597,9 @@ class Dashboard:
                   width=10, accent=True).pack(side="right")
         th_button(top, text="⟳", command=self.refresh,
                   width=3).pack(side="right", padx=(0, 6))
+        th_button(top, text="+ Group",
+                  command=lambda: self.open_group_editor(None),
+                  width=8).pack(side="right", padx=(0, 6))
         self.status_var = tk.StringVar(value="")
         tk.Label(r, textvariable=self.status_var, fg="#E3B341", bg=TH_BG,
                  font=("Segoe UI", 9)).pack(fill="x", padx=12)
@@ -586,10 +612,23 @@ class Dashboard:
         self.list_frame = tk.Frame(canvas, bg=TH_BG)
         self.list_frame.bind("<Configure>",
                              lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+        canvas.create_window((0, 0), window=self.list_frame, anchor="nw",
+                                 tags=("listwin",))
         canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self._canvas = canvas
+        # Wheel scroll (Windows: delta/120 per notch). Bound on the
+        # toplevel: wheel over any row/label bubbles up to it (plain
+        # widgets don't consume <MouseWheel>). Without this the ONLY
+        # way down was dragging the thin bar (backlog #4).
+        r.bind("<MouseWheel>",
+               lambda ev, cv=canvas: cv.yview_scroll(-1 * int(ev.delta / 120),
+                                                     "units"))
+        # Inner frame follows the canvas width (no horizontal squeeze).
+        canvas.bind("<Configure>",
+                    lambda ev, cv=canvas: cv.itemconfig("listwin",
+                                                        width=ev.width))
         bot = tk.Frame(r, bg=TH_BG)
         bot.pack(fill="x", padx=12, pady=(4, 12))
         th_button(bot, text="Open works.json",
@@ -600,6 +639,10 @@ class Dashboard:
                   width=10).pack(side="right")
         r.withdraw()
         r.protocol("WM_DELETE_WINDOW", self.hide)
+        # Real-popup behavior (backlog #5): any focus leaving the whole
+        # dashboard tree schedules a dismiss check (editors/dialogs are
+        # child Toplevels, so focus inside them keeps us open).
+        r.bind("<FocusOut>", lambda _e: r.after(150, self._maybe_autodismiss))
         self.root = r
         self.refresh()
         r.after(800, self._poll)
@@ -669,6 +712,7 @@ class Dashboard:
     def show(self):
         self.ensure()
         self.refresh()
+        self._place_near_tray()
         self.root.deiconify()
         try:
             self.root.lift()
@@ -683,6 +727,46 @@ class Dashboard:
         except Exception:
             pass
         self.visible = False
+
+    def _place_near_tray(self, win=None, W=400, H=600):
+        """Pin a window bottom-right (taskbar/resolution may have moved).
+
+        The dashboard pins to the corner; secondary windows (log viewer)
+        sit LEFT of it when it is visible instead of on top of it.
+        """
+        try:
+            win = win or self.root
+            sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+            x = sw - W - 16
+            if win is not self.root and self.visible:
+                x = x - 400 - 12
+                if x < 0:
+                    x = sw - W - 16
+            win.geometry(f"{W}x{H}+{x}+{sh - H - 60}")
+        except Exception:
+            pass
+
+    def _maybe_autodismiss(self):
+        """Dismiss when focus leaves the whole dashboard tree (backlog #5).
+
+        Editor/log dialogs are Toplevel children of the root, so focus
+        inside them keeps the popup open; only focus going outside the
+        app (or nowhere) dismisses it.
+        """
+        try:
+            if not self.visible or self.root is None:
+                return
+            try:
+                focus = self.root.focus_displayof()
+            except Exception:
+                focus = None
+            if focus is None:
+                self.hide()
+                return
+            if not str(focus).startswith(str(self.root)):
+                self.hide()
+        except Exception:
+            pass
 
     def say(self, msg):
         try:
@@ -763,6 +847,10 @@ class Dashboard:
             th_button(brow, text="▶ Start all",
                       command=lambda ms=members: self._act_all(ms, True),
                       width=10, accent=True).pack(side="left")
+            th_button(brow, "✏️", lambda g=g: self.open_group_editor(g),
+                      width=3).pack(side="left", padx=(4, 0))
+            th_button(brow, "🗑", lambda g=g: self.delete_group(g),
+                      width=3).pack(side="left", padx=4)
             th_button(brow, text="\u23f9 Stop all",
                       command=lambda ms=members: self._act_all(ms, False),
                       width=10).pack(side="left", padx=4)
@@ -771,6 +859,27 @@ class Dashboard:
                 work_row(self.list_frame, w)
         if not quiet:
             self.say(f"{len(run)} running")
+        # Scroll health (backlog #4): explicit region after every rebuild
+        # (never depend on a <Configure> arriving), and clamp a stale
+        # view back into range when the content shrank.
+        try:
+            cv = self._canvas
+            if cv is not None:
+                self.list_frame.update_idletasks()
+                box = cv.bbox("all")
+                if box:
+                    cv.configure(scrollregion=box)
+                    h = cv.winfo_height()
+                    if self.visible and h > 1:
+                        span = box[3] - box[1] - h
+                        if span <= 0:
+                            cv.yview_moveto(0)
+                        else:
+                            first, _last = cv.yview()
+                            if first * (box[3] - box[1]) > span:
+                                cv.yview_moveto(span / (box[3] - box[1]))
+        except Exception:
+            pass
 
     # -- row actions (ALL async: scans/kills block for seconds and must
     # never freeze the tk mainloop -- that freeze was the real bug) -------
@@ -814,7 +923,11 @@ class Dashboard:
         label = w.get("label", w.get("id", "?"))
         win = tk.Toplevel(self.root)
         win.title(f"log: {label}")
-        win.geometry("760x460")
+        self._place_near_tray(win, 760, 460)
+        try:
+            win.transient(self.root)
+        except Exception:
+            pass
         txt = tk.Text(win, wrap="none", bg="#1e1e1e", fg="#d4d4d4",
                       insertbackground="#d4d4d4", selectbackground="#264f78")
         txt.pack(fill="both", expand=True)
@@ -909,7 +1022,7 @@ class Dashboard:
             return f"stop failed: {e}"
         time.sleep(1.5)
         rec = core.launch_work(w)
-        return "restarted — fresh window" if rec else "start failed (bat missing?)"
+        return "restarted — fresh window" if rec else "start failed (nothing runnable?)"
 
     def _do_unpark_action(self, wid):
         """Work-icon click in tray: restore its window, drop the icon."""
@@ -953,7 +1066,7 @@ class Dashboard:
             manifest["works"] = [x for x in manifest["works"] if x.get("id") != w.get("id")]
             for g in manifest.get("groups", []):
                 g["members"] = [m for m in g.get("members", []) if m != w.get("id")]
-            core.MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+            core.save_manifest(manifest)
             core.clear_hidden_work(w)
             try:
                 if tray_host is not None:
@@ -961,6 +1074,79 @@ class Dashboard:
             except Exception:
                 pass
             self.say(f"deleted '{w.get('label')}'")
+            self.refresh(quiet=True)
+        except Exception as e:
+            messagebox.showerror("Delete failed", str(e))
+
+    # -- group editor (backlog #3) ----------------------------------------
+    def open_group_editor(self, group=None):
+        manifest = core.load_manifest()
+        win = tk.Toplevel(self.root)
+        win.title("Rename Group" if group else "New Group")
+        win.attributes("-topmost", True)
+        win.resizable(False, False)
+        win.configure(bg=TH_BG)
+        namevar = tk.StringVar(value=(group or {}).get("label", ""))
+        tk.Label(win, text="Label", bg=TH_BG, fg=TH_FG).grid(
+            row=0, column=0, sticky="w", padx=8, pady=6)
+        tk.Entry(win, textvariable=namevar, width=40, relief="flat", bd=4,
+                 bg=TH_FIELD, fg="white", insertbackground="white").grid(
+            row=0, column=1, padx=8, pady=6)
+        tk.Label(win, text="Members", bg=TH_BG, fg=TH_FG).grid(
+            row=1, column=0, sticky="nw", padx=8)
+        box = tk.Frame(win, bg=TH_BG)
+        box.grid(row=1, column=1, sticky="w", padx=8, pady=3)
+        current = set((group or {}).get("members", []))
+        checks = {}
+        for w in manifest.get("works", []):
+            wid = w.get("id", "")
+            var = tk.BooleanVar(value=wid in current)
+            checks[wid] = var
+            tk.Checkbutton(box, text=w.get("label", wid), variable=var,
+                           bg=TH_BG, fg=TH_FG, selectcolor=TH_FIELD,
+                           activebackground=TH_BG, activeforeground=TH_FG,
+                           anchor="w").pack(fill="x")
+
+        def save():
+            label = namevar.get().strip()
+            if not label:
+                messagebox.showwarning("Missing", "Group label is required.")
+                return
+            man = core.load_manifest()
+            gid = (group or {}).get("id") or core.slug_group_id(label, man)
+            members = [x.get("id") for x in man.get("works", [])
+                       if x.get("id") in checks and checks[x.get("id")].get()]
+            groups = man.get("groups", [])
+            hit = [g for g in groups if g.get("id") == gid]
+            if hit:
+                hit[0]["label"] = label
+                hit[0]["members"] = members
+            else:
+                groups.append({"id": gid, "label": label, "members": members})
+                man["groups"] = groups
+            try:
+                core.save_manifest(man)
+            except Exception as e:
+                messagebox.showerror("Save failed", str(e))
+                return
+            win.destroy()
+            self.say(f"saved group '{label}'")
+            self.refresh(quiet=True)
+
+        th_button(win, text="Save", command=save, width=14,
+                  accent=True).grid(row=2, column=1, pady=10)
+        return win
+
+    def delete_group(self, group):
+        if not messagebox.askyesno("Delete group",
+                                    f"Remove group '{group.get('label')}'? (its works stay standalone)"):
+            return
+        try:
+            man = core.load_manifest()
+            man["groups"] = [g for g in man.get("groups", [])
+                             if g.get("id") != group.get("id")]
+            core.save_manifest(man)
+            self.say(f"deleted group '{group.get('label')}'")
             self.refresh(quiet=True)
         except Exception as e:
             messagebox.showerror("Delete failed", str(e))
@@ -1024,24 +1210,71 @@ class Dashboard:
                        bg=TH_BG, fg=TH_FG, selectcolor=TH_FIELD,
                        activebackground=TH_BG, activeforeground=TH_FG).grid(
             row=5, column=1, sticky="w", padx=8)
+        tk.Label(win, text="Commands: one per line (app: prefix = App step, else Terminal). "
+                           "Non-empty = inline mode, overrides .bat at launch.",
+                 bg=TH_BG, fg=TH_DIM, font=TH_FONT_S).grid(
+            row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
+        txt_steps = tk.Text(win, width=64, height=5, relief="flat", bd=4,
+                            bg=TH_FIELD, fg="white", insertbackground="white",
+                            font=("Consolas", 9))
+        txt_steps.grid(row=7, column=0, columnspan=3, padx=8, pady=3, sticky="we")
+        if (work or {}).get("steps"):
+            txt_steps.insert("1.0", core.steps_to_text(work.get("steps")))
+        tk.Label(win, text="Vars: NAME=value per line (%NAME% usable in commands).",
+                 bg=TH_BG, fg=TH_DIM, font=TH_FONT_S).grid(
+            row=8, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 0))
+        txt_vars = tk.Text(win, width=64, height=3, relief="flat", bd=4,
+                           bg=TH_FIELD, fg="white", insertbackground="white",
+                           font=("Consolas", 9))
+        txt_vars.grid(row=9, column=0, columnspan=3, padx=8, pady=3, sticky="we")
+        if (work or {}).get("vars"):
+            txt_vars.insert("1.0", core.vars_to_text(work.get("vars")))
 
         def save():
             label = vals["label"].get().strip()
             bat = vals["bat"].get().strip()
             match = vals["match"].get().strip()
-            if not label or not bat:
-                messagebox.showwarning("Missing", "Label + start file are required.")
+            steps_raw = txt_steps.get("1.0", "end").strip()
+            vars_raw = txt_vars.get("1.0", "end").strip()
+            steps = core.parse_steps_text(steps_raw)
+            if not label or (not bat and not steps):
+                messagebox.showwarning("Missing", "Label + (start file or commands) are required.")
                 return
-            if not os.path.exists(bat):
+            if steps and not match and not bat:
+                messagebox.showwarning("Missing", "Match token is required for file-less steps works (detection needs it).")
+                return
+            if bat and not os.path.exists(bat):
                 if not messagebox.askyesno("File not found",
                                            f"'{bat}' does not exist.\nSave anyway?"):
                     return
             man = core.load_manifest()
             wid = (work or {}).get("id") or ("w-" + "".join(
                 c.lower() if c.isalnum() else "-" for c in label).strip("-")[:24])
-            entry = {"id": wid, "label": label, "bat": bat,
-                     "match": match or os.path.basename(bat),
-                     "icon": vals["icon"].get(), "detect": bool(vals["detect"].get())}
+            entry = dict(work or {})
+            entry.update({"id": wid, "label": label,
+                          "icon": vals["icon"].get(),
+                          "detect": bool(vals["detect"].get())})
+            if steps:
+                # Inline mode: steps win at launch; a stored `bat` stays
+                # only as fallback (Hamster-Clint keeps both).
+                entry["steps"] = steps
+                if vars_raw.strip():
+                    entry["vars"] = core.parse_vars_text(vars_raw)
+                else:
+                    entry.pop("vars", None)
+                if bat:
+                    entry["bat"] = bat
+                else:
+                    entry.pop("bat", None)
+                if match:
+                    entry["match"] = match
+                elif bat:
+                    entry["match"] = os.path.basename(bat)
+            else:
+                entry["bat"] = bat
+                entry["match"] = match or os.path.basename(bat)
+                entry.pop("steps", None)
+                entry.pop("vars", None)
             ids = [x.get("id") for x in man["works"]]
             if wid in ids:
                 man["works"] = [entry if x.get("id") == wid else x for x in man["works"]]
@@ -1062,7 +1295,7 @@ class Dashboard:
             man["works"].sort(key=lambda x: 0 if x.get("id") in
                               {m for g in man.get("groups", []) for m in g.get("members", [])} else 1)
             try:
-                core.MANIFEST.write_text(json.dumps(man, indent=2, ensure_ascii=False), encoding="utf-8")
+                core.save_manifest(man)
             except Exception as e:
                 messagebox.showerror("Save failed", str(e))
                 return
@@ -1071,7 +1304,8 @@ class Dashboard:
             self.refresh(quiet=True)
 
         th_button(win, text="Save", command=save, width=14,
-                  accent=True).grid(row=6, column=1, pady=10)
+                  accent=True).grid(row=10, column=1, pady=10)
+        return win
 
 
 # --------------------------------------------------------------------------

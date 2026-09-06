@@ -41,6 +41,13 @@ inside an `echo` within a block breaks cmd parsing silently
 `cmd /k` (not `/c`) keeps the window open; no trailing `pause` needed
 on the success path. Don't invent flags — keep each work's real command
 as it was (Server stays plain `npm run dev`).
+TRAP (2026-09-06, bisected): never a bare `npm`/`npx` line under
+`setlocal` — npm.cmd ends with a `goto` to a nonexistent label, and
+the failed goto unwinds the whole setlocal stack, reverting cwd to
+the pre-`cd` dir before node spawns (symptom: ENOENT package.json at
+the launcher dir while `echo %CD%` shows the right one). Hand bats
+are immune only because the real command runs under `cmd /k` (fresh
+child cmd); generated detached runners emit NO `setlocal` at all.
 
 ## GUI launchers (Unity Hub / VSCode / Web .lnk)
 
