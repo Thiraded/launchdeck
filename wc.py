@@ -115,6 +115,8 @@ def toggle_work_window(node) -> str:
         return "h works on a running work line (cursor on [-])"
     if not node.is_running():
         return f"'{node.label}' is not running -- nothing to minimize"
+    if node.work and node.work.get("run") == "detached":
+        return f"'{node.label}' runs detached (no window) -- log is in wctray"
     hwnds = core.find_work_hwnds(node.work)
     if not hwnds:
         return f"'{node.label}' is running but its window was not found"

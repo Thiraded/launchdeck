@@ -23,11 +23,13 @@
       "label": "Hamster-Server start",
       "bat": "D:\\workcombo\\Hamster-Server start.bat",
       "match": "D:\\projects\\HamsterWorld\\server",
+      "run": "detached",
       "detect": true
     },
     {
       "id": "hamster-clint",
       "label": "Hamster-Clint start",
+      "run": "detached",
       "bat": "D:\\workcombo\\Hamster-Clint start.bat",
       "match": "D:\\projects\\HamsterWorld\\backoffice",
       "detect": true
@@ -35,6 +37,7 @@
     {
       "id": "hamsterquest",
       "label": "Hamsterquest start",
+      "run": "detached",
       "bat": "D:\\workcombo\\Hamsterquest start.bat",
       "match": "D:\\projects\\Hamsquest",
       "detect": true
@@ -42,6 +45,7 @@
     {
       "id": "mr-unity",
       "label": "Midnight-Rider Unity start",
+      "run": "detached",
       "bat": "D:\\workcombo\\Midnight-Rider Unity start.bat",
       "match": "Unity Hub.exe",
       "detect": true
@@ -49,6 +53,7 @@
     {
       "id": "mr-vscode",
       "label": "Midnight-Rider VSCode start",
+      "run": "detached",
       "bat": "D:\\workcombo\\Midnight-Rider VSCode start.bat",
       "match": "Code.exe",
       "detect": true
@@ -56,6 +61,7 @@
     {
       "id": "omniroute-cli",
       "label": "OmniRoute CLI start",
+      "run": "detached",
       "bat": "D:\\workcombo\\OmniRoute CLI start.bat",
       "match": "omniroute",
       "log": "%LOCALAPPDATA%\\bg-launcher-logs\\bg-omniroute-cli.log",
@@ -64,6 +70,7 @@
     {
       "id": "omniroute-web",
       "label": "OmniRoute Web start",
+      "run": "detached",
       "bat": "D:\\workcombo\\OmniRoute Web start.bat",
       "match": "OmniRoute AI Gateway.lnk",
       "detect": true
@@ -71,6 +78,7 @@
     {
       "id": "gpt-mcp",
       "label": "GPT MCP start",
+      "run": "detached",
       "bat": "D:\\workcombo\\GPT MCP.bat",
       "match": "modelcontextprotocol/inspector",
       "detect": true

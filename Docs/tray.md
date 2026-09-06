@@ -14,6 +14,25 @@ re-hides new windows of hidden-marked works every cycle
 dashboard only on running/hidden/manifest change (no flicker), and
 per-work tray icons appear on Hide (green, click to restore).
 
+## Detached works (`"run": "detached"` — docker-logs model)
+
+The default for ALL works since 2026-09-06 (user moved the whole
+suite off visible windows). No console at all (`CREATE_NO_WINDOW`);
+output goes to `wc_logs/<id>.log`, and the dashboard shows a log
+viewer instead of Hide/Show (wc console `h` reports "no window"
+for detached works). Viewer rules:
+
+- Fresh log per Start (truncate + `[wc] launch …` marker) — old runs
+  never pollute the tail.
+- Live follow: 1s poll, new bytes appended only (no full redraw);
+  a file shrink means a fresh launch, so the view reloads.
+- ANSI colors render as text tags on a dark surface (server logs
+  assume a dark console); widget capped at 2000 lines.
+- URLs are clickable (underline + hand cursor, opens the default
+  browser) — e.g. vite's `http://localhost:5175/`.
+- Parsing lives in `wc_core.ansi_runs` (pure, tested); `wctray`
+  only maps names to colors.
+
 ## ctypes traps (do not regress)
 
 `kernel32.GetModuleHandleW(None)` needs its prototype set

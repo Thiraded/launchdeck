@@ -16,11 +16,13 @@ Stdlib only (ctypes + tkinter). Run via wctray.bat (pythonw, no console).
 import json
 import os
 import queue
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
+import webbrowser
 import datetime
 import tkinter as tk
 import traceback
@@ -33,6 +35,51 @@ from wc_tray import TrayIcon, WM_LBUTTONUP, WM_RBUTTONUP, WM_CONTEXTMENU
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "wc_logs" / "wctray.log"
 APP_TIP = "Works"
+
+# ANSI fg name (wc_core.ansi_runs) -> viewer color. Server logs assume a
+# dark console, so the log viewer is dark too (docker-logs style).
+LOG_FG = {
+    "black": "#808080", "red": "#cd3131", "green": "#0dbc79",
+    "yellow": "#e5e510", "blue": "#2472c8", "magenta": "#bc3fbc",
+    "cyan": "#11a8cd", "white": "#e5e5e5", "gray": "#767676",
+    "bright-red": "#f14c4c", "bright-green": "#23d18b",
+    "bright-yellow": "#f5f543", "bright-blue": "#3b8eea",
+    "bright-magenta": "#d670d6", "bright-cyan": "#29b8db",
+    "bright-white": "#ffffff",
+}
+
+URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def _tag_links(txt, start, end):
+    """Tag URL substrings in [start, end) with the clickable link tag."""
+    try:
+        text = txt.get(start, end)
+    except Exception:
+        return
+    for m in URL_RE.finditer(text):
+        url = m.group(0).rstrip(".,;:!?)]")
+        if not url:
+            continue
+        a = f"{start}+{m.start()}c"
+        b = f"{start}+{m.start() + len(url)}c"
+        try:
+            txt.tag_add("link", a, b)
+        except Exception:
+            pass
+
+
+def _open_link(event):
+    """Open the clicked link-tagged URL in the default browser."""
+    try:
+        w = event.widget
+        idx = w.index(f"@{event.x},{event.y}")
+        rng = w.tag_prevrange("link", f"{idx}+1c") or w.tag_nextrange("link", idx)
+        if rng:
+            webbrowser.open(w.get(rng[0], rng[1]).strip())
+    except Exception:
+        pass
+    return "break"
 
 _SINGLE_PORT = 51237  # wctray single-instance lock (OS releases it on exit)
 _lock_sock = None
@@ -660,7 +707,10 @@ class Dashboard:
             icon = w.get("icon", "⚡")
             hidden = core.is_work_hidden(w)
             dot_c = TH_GREEN if running else TH_GRAY
-            sub = "running" if running else "stopped"
+            if w.get("run") == "detached" and running:
+                sub = "running · detached (no window)"
+            else:
+                sub = "running" if running else "stopped"
             if hidden:
                 sub += "  ·  hidden"
             row = tk.Frame(parent, bg=TH_CARD, padx=2, pady=2,
@@ -679,9 +729,16 @@ class Dashboard:
             th_button(btns, "Stop" if running else "Start",
                       lambda w=w: self._act_run(w),
                       width=8, accent=not running).pack(side="left")
-            th_button(btns, "Show" if hidden else "Hide",
-                      lambda w=w: self._act_hide(w),
-                      width=8).pack(side="left", padx=4)
+            if w.get("run") == "detached":
+                # No window exists in detached mode -- Hide is meaningless;
+                # the log viewer is the docker-logs equivalent instead.
+                th_button(btns, "log",
+                          lambda w=w: self.open_log_viewer(w),
+                          width=8).pack(side="left", padx=4)
+            else:
+                th_button(btns, "Show" if hidden else "Hide",
+                          lambda w=w: self._act_hide(w),
+                          width=8).pack(side="left", padx=4)
             th_button(btns, "↻", lambda w=w: self._act_restart(w),
                       width=3).pack(side="left")
             th_button(btns, "\u270f\ufe0f", lambda w=w: self.open_editor(w),
@@ -740,6 +797,90 @@ class Dashboard:
             self.root.after(0, _done)
         except Exception:
             pass
+
+    def open_log_viewer(self, w):
+        """Live color tail for a detached work's log (docker-logs equivalent).
+
+        Incremental follow (1s poll, new bytes only -- no full redraw, no
+        flicker); a shrink means a fresh launch truncated the log, so the
+        view reloads. ANSI colors render via wc_core.ansi_runs tags.
+        A work with its own `"log"` key tails that file instead.
+        """
+        try:
+            path = core.work_display_log_path(w)
+        except Exception as e:
+            self.say(f"log path failed: {e}")
+            return
+        label = w.get("label", w.get("id", "?"))
+        win = tk.Toplevel(self.root)
+        win.title(f"log: {label}")
+        win.geometry("760x460")
+        txt = tk.Text(win, wrap="none", bg="#1e1e1e", fg="#d4d4d4",
+                      insertbackground="#d4d4d4", selectbackground="#264f78")
+        txt.pack(fill="both", expand=True)
+        for _name, _color in LOG_FG.items():
+            txt.tag_config(f"fg-{_name}", foreground=_color)
+        txt.tag_config("link", foreground="#4ea6ff", underline=True)
+        txt.tag_bind("link", "<Button-1>", _open_link)
+        txt.tag_bind("link", "<Enter>",
+                     lambda e: e.widget.config(cursor="hand2"))
+        txt.tag_bind("link", "<Leave>", lambda e: e.widget.config(cursor=""))
+        txt.config(state="disabled")
+        bar = tk.Frame(win)
+        bar.pack(fill="x")
+        state = {"pos": 0}
+
+        def _insert_runs(chunk):
+            txt.config(state="normal")
+            start = txt.index("end-1c")
+            for seg, fg in core.ansi_runs(chunk):
+                txt.insert("end", seg, (f"fg-{fg}",) if fg else ())
+            _tag_links(txt, start, txt.index("end-1c"))
+            if int(txt.index("end-1c").split(".")[0]) > 2000:
+                txt.delete("1.0", "1000.0")
+            txt.see("end")
+            txt.config(state="disabled")
+
+        def _full_load():
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    tail = f.readlines()[-150:]
+                    state["pos"] = f.tell()
+            except OSError:
+                tail = ["(no log yet -- Start the work first)\n"]
+                state["pos"] = 0
+            txt.config(state="normal")
+            txt.delete("1.0", "end")
+            txt.config(state="disabled")
+            _insert_runs("".join(tail))
+
+        def _follow():
+            try:
+                if not win.winfo_exists():
+                    return
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    win.after(1000, _follow)
+                    return
+                if size < state["pos"]:
+                    _full_load()  # fresh launch truncated the log
+                elif size > state["pos"]:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        f.seek(state["pos"])
+                        chunk = f.read()
+                        state["pos"] = f.tell()
+                    if chunk:
+                        _insert_runs(chunk)
+                win.after(1000, _follow)
+            except Exception:
+                pass
+
+        tk.Button(bar, text="Reload",
+                  command=lambda: win.after(0, _full_load)).pack(side="left")
+        tk.Label(bar, text=path).pack(side="left", padx=8)
+        _full_load()
+        win.after(1000, _follow)
 
     def _act_run(self, w):
         self._act_async(lambda: toggle_start_stop(w), "working…")

@@ -9,8 +9,9 @@
 ## What this is
 
 Single-screen launcher that starts/stops dev servers and apps. Each
-work is a Windows `.bat` opening its OWN visible console window.
-`wc` (console TUI: Space select, Enter kill/launch, `h` minimize)
+work is a Windows `.bat` run DETACHED (no console; output to
+`wc_logs/`, live color tail in the dashboard viewer). `wc` (console
+TUI: Space select, Enter kill/launch, `h` minimize-or-detached-note)
 does both jobs; `wctray` (dashboard, pythonw) is the
 tray twin. `kc` is dead — do not resurrect. Details: `Docs/architecture.md`.
 

@@ -9,11 +9,18 @@ to conflict with one, stop and ask instead of working around it.
 - `wc` is the entry point users launch (via `wc.bat` / Desktop `wc.lnk`).
 
 ## Launch
-- Works launch via `.bat` files that open **VISIBLE** windows.
-  Never hidden, never backgrounded.
-- ONE window per work. The `.bat` itself is the window content
-  (inline shape, see `bat-template.md`); `run_work` only hosts it
-  via `start ""` (mandatory — without it the child shares wc's console).
+- Works launch via `.bat` files with `"run": "detached"` (no console
+  window; 2026-09-06 the user moved ALL works off visible windows to
+  the hamster-server docker-logs model — this supersedes the old
+  VISIBLE-window rule below, kept for history).
+  Output goes to `wc_logs/<id>.log` (fresh per Start) and the wctray
+  log viewer tails it live with ANSI colors (see `tray.md`).
+  A work with its own `"log"` key tails that file instead.
+- ONE window per work *when a window exists at all* (GUI apps still
+  open their own via `start ""`). The `.bat` itself is the window
+  content (inline shape, see `bat-template.md`); visible `run_work`
+  only hosts it via `start ""` (mandatory — without it the child
+  shares wc's console).
 
 ## Detection
 - Running state is detected **live** from process CommandLine

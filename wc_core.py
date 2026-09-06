@@ -15,6 +15,7 @@ Key concepts
 """
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -230,6 +231,81 @@ def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
 # --------------------------------------------------------------------------
 # run / kill
 # --------------------------------------------------------------------------
+def work_log_path(work: dict) -> str:
+    """Log file for a detached work (docker-logs equivalent). Under
+    wc_logs/ (git-ignored). Created on first detached launch."""
+    wid = work.get("id", "work")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in wid)
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wc_logs")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, safe + ".log")
+
+
+def work_display_log_path(work: dict) -> str:
+    """Log file the viewer tails for a detached work.
+
+    A work with its own `"log"` key (e.g. omniroute-cli, whose .bat
+    redirects to `%LOCALAPPDATA%\\bg-launcher-logs\\...`) shows THAT file;
+    everyone else shows the per-launch `wc_logs/<id>.log`. Only wc_logs
+    files are truncated on Start -- external logs are owned by their app.
+    """
+    own = work.get("log")
+    if own:
+        return os.path.expandvars(str(own))
+    return work_log_path(work)
+
+
+_ANSI_ESC_RE = re.compile(
+    r"\x1b\[([0-9;?]*)([@-~])"            # CSI (SGR when the final byte is 'm')
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC ... ST
+    r"|\x1b\([0-9A-Z]"                     # charset select
+    r"|\x1b[=>MEHc7-9]"                    # misc single-char escapes
+    r"|\x1b"                               # bare/malformed ESC
+)
+
+# SGR foreground code -> canonical name (viewer maps names to widget colors).
+_SGR_FG = {
+    30: "black", 31: "red", 32: "green", 33: "yellow",
+    34: "blue", 35: "magenta", 36: "cyan", 37: "white",
+    90: "gray", 91: "bright-red", 92: "bright-green", 93: "bright-yellow",
+    94: "bright-blue", 95: "bright-magenta", 96: "bright-cyan",
+    97: "bright-white",
+}
+
+
+def ansi_runs(text: str) -> list[tuple[str, str | None]]:
+    """Split *text* into (segment, fg-name|None) runs from ANSI SGR codes.
+
+    Pure helper for the wctray log viewer (core stays UI-free; the viewer
+    maps names to widget colors). All non-SGR escapes are stripped,
+    unknown SGR codes ignored, bare/malformed ESC dropped.
+    """
+    runs: list[tuple[str, str | None]] = []
+    fg: str | None = None
+    pos = 0
+    for m in _ANSI_ESC_RE.finditer(text):
+        if m.start() > pos:
+            runs.append((text[pos:m.start()], fg))
+        if m.group(2) == "m":  # SGR: update fg; every other escape: strip
+            for code in m.group(1).split(";"):
+                n = int(code) if code.isdigit() else 0
+                if n == 0 or n == 39:
+                    fg = None
+                elif n in _SGR_FG:
+                    fg = _SGR_FG[n]
+                # 1/2/22 (bold/dim) + backgrounds (40-47,100-107): ignored,
+                # fg is preserved -- server logs only color the foreground.
+        pos = m.end()
+    if pos < len(text):
+        runs.append((text[pos:], fg))
+    return [(seg, c) for seg, c in runs if seg]
+
+
+def strip_ansi(text: str) -> str:
+    """Plain-text version of *text* (fallbacks, tests, non-color contexts)."""
+    return "".join(seg for seg, _ in ansi_runs(text))
+
+
 def run_work(work: dict) -> None:
     """Launch the work's .bat in a VISIBLE terminal window (no hidden
     self-relaunch). ONE window per work: `start` opens the window that
@@ -245,6 +321,27 @@ def run_work(work: dict) -> None:
     # Passing `"" "" "bat"` made the 2nd empty string the command, which
     # `start` resolves to opening the working FOLDER in Explorer (the
     # "Enter opens a folder instead of running" bug). Use exactly one `""`.
+    if work.get("run") == "detached":
+        # Docker-style: NO console at all (CREATE_NO_WINDOW) -- there is
+        # never a window to hide, lose, or Alt+F4, so the hide-fight and
+        # headless orphans cannot happen. The SAME .bat runs, so cwd/env
+        # are identical to visible mode; output goes to the per-work log
+        # (docker-logs equivalent). stdin is NUL: `pause` sails through,
+        # interactive prompts get EOF (answer via flags/config instead).
+        # NOTE: no `start` here -- that is what opens a window.
+        # Fresh log per launch (docker-run semantics): append mode kept
+        # every restart's history forever, so the viewer showed stale
+        # output ("cache from old log"). The marker delimits runs.
+        logf = open(work_log_path(work), "w", encoding="utf-8",
+                    errors="replace")
+        logf.write(f"[wc] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {bat}\n")
+        logf.flush()
+        subprocess.Popen(["cmd.exe", "/c", bat], shell=False,
+                         stdout=logf, stderr=subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL,
+                         creationflags=_NO_WINDOW)
+        register(work)
+        return
     subprocess.Popen(["cmd.exe", "/c", "start", "", bat], shell=False)
     register(work)
 

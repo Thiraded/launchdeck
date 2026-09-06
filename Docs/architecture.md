@@ -30,9 +30,14 @@ it matters). `WINDOWTITLE` is not used — see `requirements.md`.
 
 ## Launch (`launch_work` -> `run_work`)
 
-`cmd.exe /c start "" <bat>` opens the visible window hosting the `.bat`.
-(`start` takes exactly one `""` title placeholder — a stray second `""`
-once made it open Explorer instead.) `register(work)` records
+Default is `"run": "detached"`: NO console at all (`CREATE_NO_WINDOW`),
+the same `.bat` runs, stdout/stderr go to `wc_logs/<id>.log` (fresh per
+Start + `[wc] launch` marker), stdin is NUL. The wctray log viewer is
+the docker-logs equivalent (live 1s follow, ANSI colors); a work with
+its own `"log"` key tails that file instead. Visible mode
+(`cmd.exe /c start "" <bat>`, exactly one `""` title placeholder — a
+stray second `""` once made it open Explorer instead) remains for
+works without the key. `register(work)` records
 `{label, bat, launched}` into `registry.json`. wc never auto-closes after launch;
 it is a persistent manager.
 
