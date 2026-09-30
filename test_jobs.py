@@ -69,13 +69,21 @@ class JobLifecycle(unittest.TestCase):
             h = jobs._open(w["id"])
             if h:
                 jobs._k32.TerminateJobObject(h, 1)
+                _wait(lambda: not jobs._pids(h), 3)  # log handles close
             for p in (core.work_log_path(w),
                       os.path.join(os.path.dirname(core.__file__), "wc_logs",
                                    core.gen_bat_name(w))):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+                for _ in range(20):  # a just-killed child may still hold the log
+                    try:
+                        os.remove(p)
+                        break
+                    except FileNotFoundError:
+                        break
+                    except OSError as e:
+                        last = e
+                        time.sleep(0.1)
+                else:
+                    print("tearDown could not remove", p, last)
         self.reg.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
 

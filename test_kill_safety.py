@@ -419,8 +419,7 @@ class KillSafetyTests(unittest.TestCase):
     def _materialize(self, work):
         import tempfile
         d = tempfile.mkdtemp()
-        with mock.patch.object(core.os.path, "abspath",
-                               return_value=os.path.join(d, "x.py")):
+        with mock.patch.object(core, "HERE", core.Path(d)):
             path = core.materialize_steps(work)
         with open(path, encoding="utf-8", newline="") as f:
             return path, f.read()

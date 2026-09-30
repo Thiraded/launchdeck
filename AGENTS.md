@@ -19,7 +19,7 @@ two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md
 | Path | Role |
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (id/label/bat/match/detect). |
-| `launchdeck_core.py` + `deck/core/` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. `deck/core/jobs.py` = Job Object launch/stop (`Docs/kill-safety.md`). |
+| `launchdeck_core.py` → `deck/core/` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. `launchdeck_core` is the facade (map: `Docs/architecture.md`); `deck/core/jobs.py` = Job Object launch/stop (`Docs/kill-safety.md`). |
 | `launchdeck.py` / `launchdeck_dashboard.py` (`launchdeck.bat`, `launchdeck-tray.bat`) | The two frontends (funnel through core). Dashboard code is in `deck/ui/` (map: `Docs/architecture.md`). |
 | `assets/icons/*.svg` | UI icons, rendered by `deck/ui/icons.py` (stdlib). |
 | `launchdeck_tray.py` | Tray primitives (ctypes only). Reference; see `Docs/tray.md`. |

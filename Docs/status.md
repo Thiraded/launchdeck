@@ -9,6 +9,9 @@
   real work: the next Start of each work from the NEW deck is its first
   jobbed launch. Works already running were started the old way and keep
   the legacy Stop until restarted.
+- Same day: core split into `deck/core/` behind the `launchdeck_core`
+  facade (old vs new core compared on the real manifest: identical), and
+  the dormant hide/show/park subsystem + console `h` key removed.
 
 ## 2026-09-30 — pending live check
 

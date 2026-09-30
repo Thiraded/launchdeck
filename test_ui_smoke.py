@@ -106,10 +106,12 @@ class DashboardSmoke(unittest.TestCase):
         import symtable
         from pathlib import Path
         bad = []
-        for p in Path("deck/ui").glob("*.py"):
+        # deck/core too: the core split hit it (`steps`/`manifest` locals).
+        for p in [*Path("deck/ui").glob("*.py"), *Path("deck/core").glob("*.py")]:
             src = p.read_text(encoding="utf-8")
             mods = {"core"} | {a.asname or a.name for n in ast.walk(ast.parse(src))
-                               if isinstance(n, ast.ImportFrom) and n.module == "deck.ui"
+                               if isinstance(n, ast.ImportFrom)
+                               and n.module in ("deck.ui", "deck.core")
                                for a in n.names}
 
             def walk(t):

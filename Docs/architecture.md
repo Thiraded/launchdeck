@@ -27,6 +27,35 @@ unchanged):
 Rule: `state` and `theme` are imported as modules (`state.log(...)`), so
 rebinding and `mock.patch.object(state, ...)` reach every caller.
 
+## Core modules (`deck/core/`)
+
+`launchdeck_core.py` is a facade (split 2026-10-01 from 2,200 lines, code
+moved verbatim). `core.X` reads AND writes are forwarded to the module
+that owns `X`, so `mock.patch.object(core, "scan_table", ...)` still
+reaches `kill_work`. Inside `deck/core`, a cross-module name is always
+qualified (`detect.scan_table`), never `from x import name`.
+
+| Module | Role |
+|--------|------|
+| `common.py` | Repo root `HERE`, `_NO_WINDOW`. |
+| `manifest.py` | `works.json` load/save, settings, hotkeys, group slugs. |
+| `store.py` | `registry.json`, atomic write, `_StateMutex`. |
+| `steps.py` | steps/vars -> generated `.bat`, log paths, editor text forms. |
+| `ansi.py` | SGR color runs for the log viewer. |
+| `detect.py` | Process table scans, identity tokens, `is_running`. |
+| `jobs.py` | Job Object launch/stop (`kill-safety.md` "Job Objects"). |
+| `kill.py` | `kill_work`: job stop, else the legacy passes. |
+| `windows.py` | Find/close a work's windows (legacy Alt+F4 pass). |
+| `model.py` | TUI tree model + selection state machine. |
+| `launch.py` | `run_work`, `launch_work`, `poll_launch`. |
+
+Rule: a function local must never share a sibling module's name (a local
+`steps` or `manifest` turns every `steps.x` in that function into an
+UnboundLocalError). Import the module under an alias
+(`manifest as manifest_mod`) where the name is part of a public
+signature. `test_no_local_shadows_a_module` enforces this for
+`deck/ui` and `deck/core`.
+
 ## Icons (`deck/ui/icons.py`)
 
 Tk 8.6 has no SVG and Pillow is off-limits, so `assets/icons/*.svg`
