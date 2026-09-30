@@ -20,14 +20,15 @@ two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (id/label/bat/match/detect). |
 | `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. |
-| `launchdeck.py` / `launchdeck_dashboard.py` (`launchdeck.bat`, `launchdeck-tray.bat`) | The two frontends (funnel through core). |
+| `launchdeck.py` / `launchdeck_dashboard.py` (`launchdeck.bat`, `launchdeck-tray.bat`) | The two frontends (funnel through core). Dashboard code is in `deck/ui/` (map: `Docs/architecture.md`). |
+| `assets/icons/*.svg` | UI icons, rendered by `deck/ui/icons.py` (stdlib). |
 | `launchdeck_tray.py` | Tray primitives (ctypes only). Reference; see `Docs/tray.md`. |
 | `launchdeck-gen-<id>.bat` (in `wc_logs/`, generated) | Per-work runners, materialized from manifest steps (see `Docs/bat-template.md`). |
 | `hermess.bat` | Hermes launcher (moved in here; shimmed from `wc-bin`). |
 | `gowc/` + `gowc.exe` | Optional Go scan/kill accelerator (see `Docs/gowc.md`). |
 | `registry.json` | Runtime: launches, hidden tracking. Churns; normal. |
 | `launchdeck.settings.txt` | Selection preset. |
-| `test_launchdeck_core.py`, `test_tray_foundation.py` | Tests (policy in `Docs/verification.md`). |
+| `test_launchdeck_core.py`, `test_tray_foundation.py`, `test_kill_safety.py`, `test_ui_smoke.py` | Tests (policy in `Docs/verification.md`). Only `test_launchdeck_core.py` spawns processes. |
 | `Docs/` | ALL knowledge (below). `spec-*.md` history stays at root. |
 
 Outside the repo: Desktop keeps only `launchdeck.lnk`; `%LOCALAPPDATA%\wc-bin`

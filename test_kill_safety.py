@@ -6,7 +6,7 @@ from unittest import mock
 
 import launchdeck_core as core
 import launchdeck
-import launchdeck_dashboard
+from deck.ui import instance, state, tray as ui_tray
 
 
 class Fn:
@@ -70,7 +70,7 @@ class KillSafetyTests(unittest.TestCase):
                 mock.patch.object(core, "scan_available", return_value=True), \
                 mock.patch.object(core, "is_running", return_value=True), \
                 mock.patch.object(core, "kill_work", return_value=[123]):
-            result = launchdeck_dashboard.toggle_start_stop(work)
+            result = state.toggle_start_stop(work)
         self.assertIn("stop blocked 'Demo' (PIDs 123)", result)
 
     def test_dashboard_does_not_start_when_process_scan_is_unavailable(self):
@@ -78,7 +78,7 @@ class KillSafetyTests(unittest.TestCase):
         with mock.patch.object(core, "scan_commandlines", return_value=[]), \
                 mock.patch.object(core, "scan_available", return_value=False), \
                 mock.patch.object(core, "launch_work") as launch:
-            result = launchdeck_dashboard.toggle_start_stop(work)
+            result = state.toggle_start_stop(work)
         self.assertIn("status unavailable", result)
         launch.assert_not_called()
 
@@ -476,18 +476,18 @@ class KillSafetyTests(unittest.TestCase):
                          (core.RUN, core.OFF, core.OFF))
 
     def test_tray_menu_run_is_queued_not_executed(self):
-        tray = launchdeck_dashboard.WorkTray.__new__(launchdeck_dashboard.WorkTray)
+        tray = ui_tray.WorkTray.__new__(ui_tray.WorkTray)
         tray._menu_ids = {5000: ("w1", "run")}
-        with mock.patch.object(launchdeck_dashboard, "work_by_id",
+        with mock.patch.object(state, "work_by_id",
                                return_value={"id": "w1"}), \
-                mock.patch.object(launchdeck_dashboard, "toggle_start_stop") as tss, \
-                mock.patch.object(launchdeck_dashboard, "actions") as q:
+                mock.patch.object(state, "toggle_start_stop") as tss, \
+                mock.patch.object(state, "actions") as q:
             tray._on_menu(5000)
         tss.assert_not_called()
         q.put.assert_called_once_with(("run", "w1"))
 
     def test_single_instance_mutex_second_owner_exits(self):
-        dash = launchdeck_dashboard
+        dash = instance
         name = f"Local\\launchdeck-test-{os.getpid()}"
         with mock.patch.object(dash, "_INSTANCE_MUTEX", name), \
                 mock.patch.object(dash, "_instance_handle", None):

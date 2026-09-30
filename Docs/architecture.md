@@ -6,6 +6,38 @@ no console). All logic lives in `launchdeck_core.py` (no UI); both
 frontends funnel through `launch_work` / `kill_work`, so a fix in
 core covers every Start/Stop path.
 
+## Dashboard modules (`deck/ui/`)
+
+`launchdeck_dashboard.py` is a 20-line entry shim; the deck lives in
+`deck/ui/` (split 2026-09-30 from one 2,500-line file, behavior
+unchanged):
+
+| Module | Role |
+|--------|------|
+| `main.py` | `main()`: instance guard, tray thread, Dashboard, mainloop. |
+| `app.py` | `Dashboard`: window lifecycle, popups, `_poll` action pump, `_run_async`. Composed of the mixins below. |
+| `worklist.py` / `actions.py` / `editors.py` / `logviewer.py` | Mixins: rows (build + in-place update), row actions, dialogs, log tail. |
+| `tray.py` | `WorkTray` (tray thread). Tk work is queued to `state.actions`. |
+| `state.py` | Shared mutable state + work ops: `log`, `actions` queue, `_running` (monitor thread), `tray_host`, `toggle_start_stop`. |
+| `theme.py` | Palettes + fonts. `TH_*` are rebound on theme switch: read as `theme.TH_X`, never `from theme import`. |
+| `widgets.py` / `viewmodel.py` | Themed Tk helpers / pure row+form helpers. |
+| `icons.py` / `dpi.py` | SVG icon renderer (below) / DPI awareness. |
+| `instance.py`, `selftest.py` | Named-mutex guard, `--self-test`. |
+
+Rule: `state` and `theme` are imported as modules (`state.log(...)`), so
+rebinding and `mock.patch.object(state, ...)` reach every caller.
+
+## Icons (`deck/ui/icons.py`)
+
+Tk 8.6 has no SVG and Pillow is off-limits, so `assets/icons/*.svg`
+(Lucide-style, ISC, 24 grid, stroke 2) are parsed and rasterized in
+pure Python: strokes by distance-to-segment (AA, round caps), fills by
+supersampled nonzero scanline, optional circle/pill plate, emitted as
+RGBA PNG -> `PhotoImage`. Cached per (name, size, color, plate). Cost:
+~2.5 ms per icon cold, free warm. Canvas polygons are NOT an option
+(no AA on Windows). Add an icon = drop an .svg using only path / line /
+polyline / polygon / rect / circle / ellipse.
+
 ## State tokens (`launchdeck_core.py`)
 
 ```

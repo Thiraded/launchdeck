@@ -112,39 +112,40 @@ class Tests(unittest.TestCase):
 
 
     def test_partial_restore_keeps_parked_icon(self):
-        import launchdeck_dashboard as wctray
-        tray = wctray.WorkTray()
+        from deck.ui import state, tray as ui_tray
+        tray = ui_tray.WorkTray()
         tray.parked['demo'] = {'uid': 100, 'hicon': 55, 'label': 'Demo'}
-        with mock.patch.object(wctray, 'work_by_id', return_value={'id': 'demo'}), mock.patch.object(core, 'show_work_windows', return_value=(0, 'incomplete')), mock.patch.object(core, 'is_work_hidden', return_value=True), mock.patch.object(tray, 'del_work_icon') as delete:
+        with mock.patch.object(state, 'work_by_id', return_value={'id': 'demo'}), mock.patch.object(core, 'show_work_windows', return_value=(0, 'incomplete')), mock.patch.object(core, 'is_work_hidden', return_value=True), mock.patch.object(tray, 'del_work_icon') as delete:
             self.assertEqual(tray.unpark_work('demo', restore=True), 'incomplete')
         self.assertIn('demo', tray.parked)
         delete.assert_not_called()
 
     def test_dispatcher_executes_one_handler(self):
-        import launchdeck_dashboard as wctray
-        dash = object.__new__(wctray.Dashboard)
+        from deck.ui import app, state
+        dash = object.__new__(app.Dashboard)
         dash.toggle = mock.Mock()
         dash._handle_action('toggle_ui')
         dash.toggle.assert_called_once_with()
 
 
     def test_poll_isolates_action_failure_and_reschedules(self):
-        import launchdeck_dashboard as wctray
-        dash = object.__new__(wctray.Dashboard)
+        from deck.ui import app, state
+        dash = object.__new__(app.Dashboard)
         dash.root = mock.Mock()
         dash.visible = False
         dash._handle_action = mock.Mock(side_effect=[RuntimeError('boom'), None])
         test_actions = queue.Queue()
         test_actions.put('bad')
         test_actions.put('good')
-        with mock.patch.object(wctray, 'actions', test_actions), mock.patch.object(wctray, 'log') as log:
+        with mock.patch.object(state, 'actions', test_actions), mock.patch.object(state, 'log') as log:
             dash._poll()
         self.assertEqual(dash._handle_action.call_args_list,
                          [mock.call('bad'), mock.call('good')])
         log.assert_called_once()
         dash.root.after.assert_called_once_with(250, dash._poll)
     def test_one_action_consumer(self):
-        source = Path('launchdeck_dashboard.py').read_text(encoding='utf-8')
+        source = ''.join(p.read_text(encoding='utf-8')
+                         for p in Path('deck/ui').glob('*.py'))
         self.assertEqual(source.count('actions.get_nowait()'), 1)
         self.assertNotIn('def check_actions', source)
 
