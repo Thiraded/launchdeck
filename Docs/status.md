@@ -2,6 +2,8 @@
 
 ## 2026-10-01 — Job Objects (pending live check)
 
+Next steps + live checklist: `Docs/plan.md` sections 6 and 9.
+
 - Detached all-terminal works (hamster-*, hamsterquest, hamstermap,
   omniroute-cli, gpt-mcp) now start inside a named Job Object; Stop is
   CTRL_BREAK + job-member kill (`Docs/kill-safety.md` "Job Objects").

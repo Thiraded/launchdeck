@@ -46,6 +46,7 @@ holds the `launchdeck` / `launchdeck-tray` / `hermess` shims.
 - `Docs/verification.md` — gates + live-machine test policy.
 - `Docs/history.md` — moves, rename, incidents.
 - `Docs/status.md` — what is live/verified/open RIGHT NOW. Read first.
+- `Docs/plan.md` — full remaining-work plan + session handoff (traps, tests, backlog). Read second.
 
 Skills that apply here: `windows-launcher-lifecycle` (start/detect/kill
 workflow + machine-side-effect discipline), `spike` (validate before
