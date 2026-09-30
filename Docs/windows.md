@@ -1,4 +1,8 @@
-# Windows (hide / find / close) — owner sets, titles, headless
+# Windows (find / close) — owner sets, titles, headless
+
+Hide/show/park and the console `h` key were removed on 2026-10-01 (every
+work is detached; there is no window to hide). Window finding remains
+for the legacy kill's Alt+F4 pass on GUI works.
 
 ## Finding a work's windows (`find_work_hwnds`, `launchdeck_core.py`)
 
@@ -21,16 +25,8 @@
    the work label (case-insensitive), minus shared-host guard. Catches
    reparented hosts. Includes invisible windows.
 
-The up+down expansion is for HIDE/CLOSE (reversible-ish) only.
+The up+down expansion is for CLOSE (WM_CLOSE) only.
 Kill stays DOWNWARD-ONLY — see `kill-safety.md`.
-
-## `h` key (launchdeck.py) — minimize to taskbar
-
-`h` on a running work minimizes its windows (`SW_SHOWMINIMIZED`, normal
-background-app feel — still on taskbar/Alt+Tab) and tracks HWNDs in
-`_minimized_hwnds`; `h` again restores (`SW_RESTORE`). The deck console is
-never touched. When no window is found it reports
-"running but its window was not found" (see Headless below).
 
 ## Headless doctrine (researched 2026-09-06)
 

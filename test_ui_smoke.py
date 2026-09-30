@@ -46,8 +46,6 @@ class DashboardSmoke(unittest.TestCase):
             mock.patch.object(core, "scan_available", return_value=False),
             mock.patch.object(core, "launch_work", side_effect=AssertionError("launch")),
             mock.patch.object(core, "kill_work", side_effect=AssertionError("kill")),
-            mock.patch.object(core, "hidden_work_ids", return_value=set()),
-            mock.patch.object(core, "is_work_hidden", return_value=False),
             mock.patch.object(state, "_running", {"web"}),
             mock.patch.object(state, "tray_host", None),
         ]

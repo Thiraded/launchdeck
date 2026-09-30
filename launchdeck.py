@@ -12,9 +12,6 @@ Keys:
   Enter    : ACT on every [X] node --
                * if it is running  [-]  -> KILL it (window closes)
                * if not running        -> LAUNCH it (opens its own window)
-  h        : HIDE / SHOW the cursor's work terminal window
-               (cursor on a [-] work -> hide it; cursor on the same again
-                or any other work -> toggle; never touches the wc window)
   t        : leave-alone (skip on Enter)   [reserved]
   Esc / q  : quit
 
@@ -76,69 +73,6 @@ def start_running_monitor(manifest):
     t.start()
 
 
-# ---------------------------------------------------------------------------
-# Per-work window hide/show. `h` on a [-] work hides that work's terminal
-# (the cmd / bat / npx window the user is staring at). Press `h` again to
-# bring it back. The wc window itself is NEVER touched by this.
-# `h` MINIMIZES the work's window to the taskbar (like a normal app that
-# runs in the background), not full hide. The user can click the taskbar
-# icon to bring it back. This is what "background" feels like for a
-# desktop app.
-# ---------------------------------------------------------------------------
-_minimized_hwnds: dict[str, list[int]] = {}  # work_key -> list of HWNDs we've minimized
-SW_SHOWMINIMIZED = 2
-SW_SHOWNOACTIVATE = 4
-SW_RESTORE = 9
-
-
-def _minimize_restore_work(work_key: str, hwnds: list[int], mode: int) -> int:
-    """Minimize or restore a list of HWNDs. Returns the count of windows
-    that actually changed state. Uses ShowWindowAsync so we don't deadlock
-    if the owning thread is the one calling us."""
-    if not hwnds:
-        return 0
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        user32.ShowWindowAsync.restype = ctypes.c_int
-    except Exception:
-        return 0
-    changed = 0
-    for h in hwnds:
-        try:
-            if user32.ShowWindowAsync(h, mode):
-                changed += 1
-        except Exception:
-            pass
-    return changed
-
-
-def toggle_work_window(node) -> str:
-    """Minimize the cursor's work terminal to the taskbar (background);
-    restore it if already minimized. Returns a human-readable status."""
-    if node.kind != "work" or not node.work:
-        return "h works on a running work line (cursor on [-])"
-    if not node.is_running():
-        return f"'{node.label}' is not running -- nothing to minimize"
-    if node.work and node.work.get("run") == "detached":
-        return f"'{node.label}' runs detached (no window) -- log is in the deck"
-    hwnds = core.find_work_hwnds(node.work)
-    if not hwnds:
-        return f"'{node.label}' is running but its window was not found"
-    key = node.key
-    if key in _minimized_hwnds and _minimized_hwnds[key]:
-        # Currently minimized -> restore
-        n = _minimize_restore_work(key, _minimized_hwnds.pop(key), SW_RESTORE)
-        return f"Restored '{node.label}' ({n} window)"
-    # Currently visible (or first time) -> minimize to taskbar
-    n = _minimize_restore_work(key, hwnds, SW_SHOWMINIMIZED)
-    if n:
-        _minimized_hwnds[key] = hwnds
-        return f"Minimized '{node.label}' to taskbar (h again to restore)"
-    return f"Could not minimize '{node.label}'"
-
-
 def is_node_running(n) -> bool:
     """True if node `n` is a work node currently detected as running (live)."""
     if not n.work:
@@ -179,7 +113,7 @@ def flatten(model):
 def render(model, states, cursor, status):
     clear()
     print(f"{BOLD}  WORK COMBO  -  manage works (launch / kill){RESET}")
-    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  h: minimize work to taskbar  Esc/q: quit{RESET}")
+    print(f"{DIM}  [X]=select(Space)  [-]=running  Enter: kill[-]/launch  Esc/q: quit{RESET}")
     if status:
         print(f"  {YELLOW}{status}{RESET}")
     print()
@@ -416,12 +350,6 @@ def main():
             except Exception:
                 pass
             return
-
-        if ch == "h" or ch == "H":
-            # Hide / show the cursor's WORK terminal window (not wc).
-            node = rows[cursor][0]
-            status = toggle_work_window(node)
-            continue
 
         if ch == "UP":
             cursor = (cursor - 1) % len(rows)

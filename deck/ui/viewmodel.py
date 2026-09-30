@@ -27,25 +27,22 @@ def _unique_id(base, ids):
 def _row_view(w, run, pending):
     """Pure view-model for one row (headless-testable, no widgets).
 
-    Returns dict: running, hidden, icon, icon_c, sub, sub_c, dot_c.
+    Returns dict: running, icon, icon_c, sub, sub_c, dot_c.
     icon is an SVG name (or a legacy emoji, mapped/falls back in widgets).
     """
     wid = w.get("id", "")
     running = wid in run
     icon = w.get("icon") or "zap"
-    hidden = core.is_work_hidden(w)
     pend = (pending or {}).get(wid)
     if pend:
         state = pend.get("state", "")
-        return {"running": running, "hidden": hidden, "icon": icon,
+        return {"running": running, "icon": icon,
                 "icon_c": theme.TH_ACCENT, "sub": state + "…",
                 "sub_c": theme.TH_ACCENT, "dot_c": theme.TH_ACCENT}
     # detached is the only mode: the log button is the window stand-in,
     # so the status word stays short.
     sub = "running" if running else "stopped"
-    if hidden:
-        sub += "  ·  hidden"
-    return {"running": running, "hidden": hidden, "icon": icon,
+    return {"running": running, "icon": icon,
             "icon_c": theme.TH_GREEN if running else theme.TH_DIM,
             "sub": sub, "sub_c": theme.TH_DIM,
             "dot_c": theme.TH_GREEN if running else theme.TH_FAINT}

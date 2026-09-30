@@ -28,7 +28,7 @@ class WorklistMixin:
         # Layout key: state flips update rows IN PLACE (no blink).
         # Works are fingerprinted WHOLE (any config edit rebuilds --
         # otherwise row buttons keep a stale dict and Edit shows
-        # pre-edit values). Running/hidden/pending stay out: those
+        # pre-edit values). Running/pending stay out: those
         # flip constantly and update in place.
         struct = (compact,
                   tuple((g.get("id"), g.get("label"),

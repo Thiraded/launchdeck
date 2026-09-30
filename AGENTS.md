@@ -26,7 +26,7 @@ two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md
 | `launchdeck-gen-<id>.bat` (in `wc_logs/`, generated) | Per-work runners, materialized from manifest steps (see `Docs/bat-template.md`). |
 | `hermess.bat` | Hermes launcher (moved in here; shimmed from `wc-bin`). |
 | `gowc/` + `gowc.exe` | Optional Go scan/kill accelerator (see `Docs/gowc.md`). |
-| `registry.json` | Runtime: launches, hidden tracking. Churns; normal. |
+| `registry.json` | Runtime: launches (root PID + runner). |
 | `launchdeck.settings.txt` | Selection preset. |
 | `test_launchdeck_core.py`, `test_tray_foundation.py`, `test_kill_safety.py`, `test_ui_smoke.py`, `test_jobs.py` | Tests (policy in `Docs/verification.md`). `test_launchdeck_core.py` and opt-in `test_jobs.py` spawn processes. |
 | `Docs/` | ALL knowledge (below). `spec-*.md` history stays at root. |
@@ -40,7 +40,7 @@ holds the `launchdeck` / `launchdeck-tray` / `hermess` shims.
 - `Docs/architecture.md` — tokens, detection, launch, kill-overview, model, keys.
 - `Docs/bat-template.md` — the one true launcher shape + titles.
 - `Docs/kill-safety.md` — DOWN-ONLY, protected set, dry_run, passes, traps.
-- `Docs/windows.md` — find/hide/close, headless doctrine.
+- `Docs/windows.md` — find/close, headless doctrine.
 - `Docs/tray.md` — deck behavior, backlog, PARK trial.
 - `Docs/gowc.md` — Go helper protocol, numbers, rebuild.
 - `Docs/verification.md` — gates + live-machine test policy.

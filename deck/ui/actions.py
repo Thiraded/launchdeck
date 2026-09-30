@@ -21,11 +21,6 @@ class ActionsMixin:
         self._act_async(lambda: state.toggle_start_stop(w), f"{verb} '{label}'…",
                         pending={wid: (verb, verb == "starting")})
 
-    def _do_hide(self, w):
-        # Retired: detached is the only mode, nothing to hide or show.
-        # Kept as a no-op shout so any stale caller fails loudly.
-        raise RuntimeError("hide is retired (detached-only suite)")
-
     def _do_restart(self, w):
         try:
             result = core.kill_work(w)
@@ -38,18 +33,6 @@ class ActionsMixin:
         time.sleep(1.5)
         rec = core.launch_work(w)
         return "restarted — fresh window" if rec else "start failed (nothing runnable?)"
-
-    def _do_unpark_action(self, wid):
-        """Work-icon click in tray: restore its window, drop the icon."""
-        if state.tray_host is None:
-            return
-        try:
-            res = state.tray_host.unpark_work(wid, restore=True)
-        except Exception as e:
-            res = f"restore failed: {e}"
-        if res is not None:
-            self.say(res)
-            self.refresh(quiet=True)
 
     def _act_restart(self, w):
         wid = w.get("id", "")
@@ -262,12 +245,6 @@ class ActionsMixin:
             for g in manifest.get("groups", []):
                 g["members"] = [m for m in g.get("members", []) if m != w.get("id")]
             core.save_manifest(manifest)
-            core.clear_hidden_work(w)
-            try:
-                if state.tray_host is not None:
-                    state.tray_host.unpark_work(w.get("id", ""), restore=False)
-            except Exception:
-                pass
             self.say(f"deleted '{w.get('label')}'")
             self.refresh(quiet=True)
         except Exception as e:

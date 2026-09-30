@@ -1,7 +1,5 @@
 """Tray icon + right-click quick menu (runs on the tray thread;
 anything touching Tk is queued to state.actions)."""
-import threading
-
 from launchdeck_tray import TrayIcon
 from launchdeck_tray import WM_CONTEXTMENU
 from launchdeck_tray import WM_LBUTTONUP
@@ -21,12 +19,6 @@ ID_QUIT = 4002
 ID_BASE = 5000  # per-work: BASE+i*2 = start/stop, +1 = log viewer
 
 class WorkTray(TrayIcon):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.parked = {}
-        self._park_next = 100
-        self._park_lock = threading.RLock()
-
     def toggle_console(self):
         state.actions.put("toggle_ui")  # left-click -> dashboard popup
 
@@ -34,100 +26,12 @@ class WorkTray(TrayIcon):
         """Global Alt+W pressed anywhere -> toggle the dashboard."""
         state.actions.put("toggle_ui")
 
-    # parked work icons: wid -> {"uid": int, "hicon": handle}
-
     def on_tray_event(self, uid, ev):
-        """Route main and parked icon clicks without racing icon cleanup."""
         if uid in (0, 1):
             if ev in (WM_LBUTTONUP, 0x0203):
                 state.actions.put("toggle_ui")
             elif ev in (WM_RBUTTONUP, WM_CONTEXTMENU):
                 self._show_menu()
-            return
-        with self._park_lock:
-            match = next((wid for wid, info in self.parked.items()
-                          if info.get("uid") == uid), None)
-        if match is not None:
-            state.actions.put(("unpark", match))
-
-    def park_work(self, wid, label):
-        """Park a hidden work as its own tray icon. Idempotent."""
-        with self._park_lock:
-            if wid in self.parked:
-                return True
-            if not (self.hwnd and self._alive):
-                return False
-            uid = self._park_next
-            self._park_next += 1
-            hicon = self.add_work_icon(
-                uid, f"\U0001f7e2 {label} (hidden) -- click to restore")
-            if not hicon:
-                return False
-            self.parked[wid] = {"uid": uid, "hicon": hicon, "label": label}
-        state.log(f"parked '{label}' as tray icon uid={uid}")
-        try:
-            self.notify("Parked in tray", f"{label} -- click its icon to restore")
-        except Exception:
-            pass
-        return True
-
-    def unpark_work(self, wid, restore=True):
-        """Restore first; keep the icon when restoration is incomplete."""
-        with self._park_lock:
-            info = self.parked.get(wid)
-        if info is None:
-            return None
-        if restore:
-            work = state.work_by_id(wid)
-            if work is not None:
-                _count, message = core.show_work_windows(work)
-                if core.is_work_hidden(work):
-                    return message
-            else:
-                message = f"work '{wid}' no longer exists"
-        else:
-            message = f"unparked '{wid}'"
-        with self._park_lock:
-            info = self.parked.pop(wid, None)
-            if info is not None:
-                self.del_work_icon(info["uid"], info.get("hicon"))
-        return message
-
-    def sync_parked(self):
-        try:
-            hidden = core.hidden_work_ids()
-        except Exception:
-            return
-        with self._park_lock:
-            stale = [wid for wid in self.parked if wid not in hidden]
-        for wid in stale:
-            self.unpark_work(wid, restore=False)
-
-    def unpark_all(self):
-        with self._park_lock:
-            work_ids = list(self.parked)
-        for wid in work_ids:
-            self.unpark_work(wid, restore=False)
-
-    def _on_taskbar_created(self):
-        """Recreate parked icons after Explorer loses notification state."""
-        import ctypes
-        with self._park_lock:
-            for wid, info in list(self.parked.items()):
-                hicon = self.add_work_icon(
-                    info["uid"], f"\U0001f7e2 {info.get('label', wid)} (hidden)")
-                if hicon:
-                    old = info.get("hicon")
-                    info["hicon"] = hicon
-                    if old:
-                        try:
-                            ctypes.windll.user32.DestroyIcon(old)
-                        except Exception:
-                            pass
-
-    def _before_tray_shutdown(self):
-        self.unpark_all()
-
 
     def _show_menu(self):
         import ctypes

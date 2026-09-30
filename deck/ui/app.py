@@ -126,8 +126,6 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             self.toggle()
         elif action == "show_ui":
             self.show()
-        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "unpark":
-            self._do_unpark_action(action[1])
         elif isinstance(action, tuple) and len(action) == 2 and action[0] == "log":
             w = state.work_by_id(action[1])
             if w is not None:
@@ -177,7 +175,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             self._last_hk = time.time()
             self._ensure_hotkey()
         # No-flicker refresh: rebuild ONLY when something actually changed
-        # (running set, hidden set, or the manifest itself). Otherwise just
+        # (running set or the manifest itself). Otherwise just
         # touch the cheap status line -- destroying + rebuilding the whole
         # list every 3s is what made it blink.
         if self.visible:
@@ -191,7 +189,6 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             try:
                 man = core.load_manifest()
                 sig = (frozenset(state.running_snapshot()),
-                       frozenset(core.hidden_work_ids()),
                        tuple((w.get("id"), w.get("label"), w.get("icon"),
                               w.get("bat"), w.get("match")) for w in man.get("works", [])),
                        tuple((g.get("id"), g.get("label"), tuple(g.get("members", [])))
@@ -531,9 +528,4 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             except Exception:
                 pass
             self.refresh(quiet=True)
-            try:
-                if state.tray_host is not None:
-                    state.tray_host.sync_parked()
-            except Exception as e:
-                state.log(f"park sync: {e}")
         state.actions.put(("call", _done))  # _poll (250ms) runs it on the Tk thread

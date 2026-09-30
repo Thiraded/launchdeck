@@ -2,17 +2,13 @@
 
 `launchdeck_dashboard.py` (via `launchdeck-tray.bat`, pythonw, no console): tray icon +
 dashboard popup (PowerToys-Workspaces style) with per-work
-Open/Hide/Show/Stop/Restart, [+ New Task], per-work edit/delete
-(writes `works.json`). Hide = true hide (`SW_HIDE`: gone from taskbar
-AND Alt+Tab, process keeps running). Stop = kill tree + close window.
-Restart = kill + fresh launch (the way out of headless-orphan state).
+Start/Stop/Restart/Log, [+ New Task], per-work edit/delete
+(writes `works.json`). Stop = job-member kill for jobbed works, else the
+legacy kill tree (`kill-safety.md`). Restart = kill + fresh launch.
 
 Row actions run on worker threads with `after()`-back marshalling —
-scans once blocked the tk mainloop ("UI hangs" bug). The monitor
-re-hides new windows of hidden-marked works every cycle
-(`sweep_hidden_windows`; kill clears hidden tracking), rebuilds the
-dashboard only on running/hidden/manifest change (no flicker), and
-per-work tray icons appear on Hide (green, click to restore).
+scans once blocked the tk mainloop ("UI hangs" bug). The dashboard
+rebuilds only on running/manifest change (no flicker).
 
 ## Global hotkey (2026-09-06)
 
@@ -192,10 +188,9 @@ covered with a byte-exact restore.
 
 Hide is retired, never coming back: every editor save stamps
 `"run": "detached"`, rows and the tray menu show Log only (the
-windowed branch is gone), and `_do_hide` is a loud stub so any
-stale caller fails visibly instead of silently. The core
-hide/show/park backend stays dormant underneath (its tests still
-pass) — ripping it out is a separate job with no UI payoff.
+windowed branch is gone). The core hide/show/sweep backend, tray
+parking and the console `h` key were deleted on 2026-10-01 (the
+monitor no longer runs a window sweep every 3 s).
 
 ## VSCode tracking (2026-09-06)
 

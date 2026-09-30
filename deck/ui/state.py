@@ -62,7 +62,7 @@ actions = queue.Queue()  # tray thread -> tk thread requests ("toggle_ui", ...)
 # instead of at the next 3s tick (stale cache + refresh = white flash).
 _rescan = threading.Event()
 
-tray_host = None  # the live WorkTray, set by main() for park/unpark wiring
+tray_host = None  # the live WorkTray, set by main()
 
 def running_snapshot():
     with _lock:
@@ -94,12 +94,6 @@ def monitor_loop(tray, notify_new=True):
                 tray.set_tooltip(f"{APP_TIP} — {len(s)}/{n_total} running")
             except Exception:
                 pass
-            try:
-                rehidden = core.sweep_hidden_windows(manifest)
-                for wid, n in rehidden.items():
-                    log(f"sweep re-hid {n} window(s) for {wid}")
-            except Exception as e:
-                log(f"sweep: {e}")
             _prev_running = s
         except Exception as e:
             log(f"monitor: {e}")

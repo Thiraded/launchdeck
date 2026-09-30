@@ -93,12 +93,14 @@ State files (`registry.json`, `works.json`) are written via temp file +
 ## Kill (`kill_work`)
 
 Evolved past its original form (Terminate-every-match). Current design
-lives in `kill-safety.md`: DOWN-ONLY seeds + descendants, protected
+lives in `kill-safety.md`. Detached all-terminal works launched by the deck
+run in a Job Object and stop by job membership ("Job Objects"). Everything
+else uses the legacy path: DOWN-ONLY seeds + descendants, protected
 chain, NEVER-seed GUI list, token hygiene, registry runner identity,
 common-parent validation for multi-process dev works, exact duplicate-runner
 handling, `dry_run`, then three close passes (graceful
 taskkill, Alt+F4 `WM_CLOSE`, identity revalidation, `/F` sweep). A final
-scan confirms the targets are gone before `clear_hidden_work` +
+scan confirms the targets are gone before
 `unregister`; a failed scan or surviving PID is reported as blocked.
 
 ## Model / groups (`build_model`)
@@ -110,9 +112,7 @@ are group members never render standalone.
 ## launchdeck.py behavior
 
 Cursor nav (Up/Down), `Space`/`t` toggles `[ ]`<->`[X]`, `Enter` acts on
-every `[X]` (kill if `[-]`, else launch), `h` minimizes the cursor's
-work window (see `windows.md`),
-`Esc`/`q` quits (saves `launchdeck.settings.txt` preset). Live `[-]` from the
+every `[X]` (kill if `[-]`, else launch), `Esc`/`q` quits (saves `launchdeck.settings.txt` preset). Live `[-]` from the
 background thread; Enter trusts the visible cache over a fresh scan
 (a failed scan must never turn a kill into an accidental launch).
 

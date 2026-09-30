@@ -275,7 +275,6 @@ class KillSafetyTests(unittest.TestCase):
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
-                mock.patch.object(core, "clear_hidden_work"), \
                 mock.patch.object(core, "unregister"):
             result = core.kill_work(
                 {"id": "demo", "match": "D:\\launchdeck\\demo.bat"},
@@ -327,7 +326,6 @@ class KillSafetyTests(unittest.TestCase):
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
-                mock.patch.object(core, "clear_hidden_work"), \
                 mock.patch.object(core, "unregister"):
             result = core.kill_work(
                 {"id": "demo", "match": "D:\\launchdeck\\demo.bat"},
@@ -353,7 +351,6 @@ class KillSafetyTests(unittest.TestCase):
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
-                mock.patch.object(core, "clear_hidden_work") as clear_hidden, \
                 mock.patch.object(core, "unregister") as unregister:
             result = core.kill_work(
                 {"id": "demo", "match": "D:\\launchdeck\\demo.bat"},
@@ -365,7 +362,6 @@ class KillSafetyTests(unittest.TestCase):
                           ["taskkill.exe", "/PID", "201"],
                           ["taskkill.exe", "/F", "/PID", "200"],
                           ["taskkill.exe", "/F", "/PID", "201"]])
-        clear_hidden.assert_not_called()
         unregister.assert_not_called()
 
     def test_empty_revalidation_blocks_force_kill(self):
@@ -380,7 +376,6 @@ class KillSafetyTests(unittest.TestCase):
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
-                mock.patch.object(core, "clear_hidden_work") as clear_hidden, \
                 mock.patch.object(core, "unregister") as unregister:
             result = core.kill_work(
                 {"id": "demo", "match": "D:\\launchdeck\\demo.bat"},
@@ -388,7 +383,6 @@ class KillSafetyTests(unittest.TestCase):
             )
         self.assertEqual(result, [200])
         self.assertEqual(taskkills, [["taskkill.exe", "/PID", "200"]])
-        clear_hidden.assert_not_called()
         unregister.assert_not_called()
 
     def test_window_owner_walk_stops_before_explorer(self):

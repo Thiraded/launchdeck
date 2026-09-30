@@ -31,7 +31,7 @@ relaxed.
 4. **`dry_run` first.** `kill_work(work, dry_run=True)` returns the
    sorted kill PID list WITHOUT killing. Show it and get approval
    BEFORE any real kill when in doubt.
-5. **NEVER-seed GUI list** (shared with hide-seeds): brave, chrome,
+5. **NEVER-seed GUI list** (shared with window finding and jobs): brave, chrome,
    msedge, firefox, opera, vivaldi, arc, explorer, discord, slack,
    teams. A token can match a browser tab URL or chat content
    (proven: `omniroute` seeded Brave PID 4524 via tab URL).
@@ -76,7 +76,7 @@ downward set and its console-host children; the kill path does not walk
 back into a user's hosting shell; (3) after a bounded 2.5s wait, revalidate
 the runner and unchanged descendants, then run the per-PID `/F` sweep
 (`gowc kill` when present; gone PIDs report and are ignored). A final scan
-must confirm all target PIDs are gone before `clear_hidden_work` +
+must confirm all target PIDs are gone before
 `unregister`; otherwise the registry is retained and the UI reports a
 blocked stop.
 
