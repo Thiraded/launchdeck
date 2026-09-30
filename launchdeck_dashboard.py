@@ -18,7 +18,6 @@ import json
 import os
 import queue
 import re
-import socket
 import subprocess
 import sys
 import threading
@@ -83,73 +82,47 @@ def _open_link(event):
         pass
     return "break"
 
-_SINGLE_PORT = 51237  # deck single-instance lock (OS releases it on exit)
-_lock_sock = None
-
-
-def am_spawned_twin():
-    """True if another deck instance should own this boot (we exit).
-
-    Total-order election among all live deck processes: the OLDEST
-    survives (ties broken by smallest PID); everyone else exits quietly.
-    This deterministically kills the uv-venv double-exec twin (always
-    younger than its spawner), extra double-clicks, and ghosts of races
-    past -- with no timing races and no dialogs. An orphaned twin with
-    no older sibling alive takes over (correct failover).
-    Only exact-signature rows count (python exe + launchdeck_dashboard.py in cmdline).
-    Fail-open (run) if the check itself errors.
-    """
-    try:
-        if "--self-test" in sys.argv:
-            return False
-        me = os.getpid()
-        r = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-             "foreach ($p in (Get-CimInstance Win32_Process -Filter \"Name LIKE 'python%'\") ) "
-             "{ if ($p.CommandLine -like '*launchdeck_dashboard.py*') "
-             "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=25,
-            creationflags=getattr(core, "_NO_WINDOW", 0))
-        mine = ""
-        elders = []
-        for line in (r.stdout or "").splitlines():
-            parts = line.strip().split("|")
-            if len(parts) != 2 or not parts[0].strip().isdigit():
-                continue
-            pid, born = int(parts[0].strip()), parts[1].strip()
-            if pid == me:
-                mine = born
-            else:
-                elders.append((born, pid))
-        if not mine:
-            return False  # we are not even listed -- proceed
-        for born, pid in elders:
-            if born < mine or (born == mine and pid < me):
-                log(f"[election] elder deck pid={pid} born={born} owns this boot -- exiting")
-                return True
-    except Exception as e:
-        log(f"[election] failed open: {e}")
-    return False
+_INSTANCE_MUTEX = "Local\\launchdeck-dashboard"
+_instance_handle = None
 
 
 def ensure_single_instance(timeout_s=30):
-    """If another deck instance is already running, tell the user and exit.
+    """Own the deck's named mutex, or exit quietly.
 
-    Prevents the duplicate-tray-icon trap (clicks landing on a stale
-    instance while a second one owns the real state)."""
-    global _lock_sock
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    Replaces the old PowerShell birth-time election + stillborn-twin reaper
+    + localhost port lock. Root cause of the "uv-venv twin": a venv
+    pythonw.exe is a redirector that spawns the base interpreter as its
+    CHILD with the same command line. Both matched the election filter, the
+    real deck (child) always saw the redirector (parent) as an elder, and a
+    1-second birth-time tie + PID order decided whether the REAL deck exited
+    at boot. The reaper looked for children of `me` -- the twin is the
+    parent -- so it never matched. The redirector never runs Python, so it
+    can never take this mutex: exactly one deck owns it. The kernel drops
+    it when the owner dies, so a Restart handoff just waits (bounded).
+    """
+    global _instance_handle
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateMutexW.restype = ctypes.c_void_p
+    k32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    ERROR_ALREADY_EXISTS = 183
     deadline = time.time() + timeout_s
     while True:
-        try:
-            s.bind(("127.0.0.1", _SINGLE_PORT))
-            break
-        except OSError:
-            if time.time() >= deadline:
-                log("[guard] port still held after wait -- exiting quietly")
-                os._exit(0)
-            time.sleep(2)
-    _lock_sock = s  # keep bound for the life of the process
+        h = k32.CreateMutexW(None, 1, _INSTANCE_MUTEX)
+        err = ctypes.get_last_error()
+        if h and err != ERROR_ALREADY_EXISTS:
+            _instance_handle = h  # held for the life of the process
+            return
+        if h:
+            k32.CloseHandle(h)
+        if not h:
+            log(f"[guard] CreateMutexW failed ({err}) -- running unguarded")
+            return
+        if time.time() >= deadline:
+            log("[guard] another deck owns the instance mutex -- exiting quietly")
+            os._exit(0)
+        time.sleep(0.5)
 
 
 def self_test():
@@ -619,6 +592,8 @@ def monitor_loop(tray, notify_new=True):
         try:
             manifest = core.load_manifest()
             cls = core.scan_commandlines()
+            if not core.scan_available() or not cls:
+                raise RuntimeError("process scan unavailable")
             s = {w["id"] for w in manifest.get("works", [])
                  if w.get("detect") is not False and core.is_running(w, cls)}
             with _lock:
@@ -651,77 +626,6 @@ def monitor_loop(tray, notify_new=True):
 
 
 # --------------------------------------------------------------------------
-# stillborn-twin reaper (uv-venv launcher spawns the uv base interpreter
-# running our own script as OUR child on every start; the twin hangs
-# before main() -- no port, no tray icon -- and would pile up forever)
-# --------------------------------------------------------------------------
-def reap_stillborn_twins(first_delay=60, period=300):
-    """Reap only exact-signature stillborn children; log everything.
-
-    A child is reaped iff ALL hold: name is python(w).exe, its command
-    line contains launchdeck_dashboard.py, its interpreter DIFFERS from ours, and it is
-    older than 90s. Anything unparseable or doubtful is left alone.
-    """
-    import datetime
-    try:
-        mine = (sys.executable or "").lower()
-    except Exception:
-        mine = ""
-    me = os.getpid()
-
-    def scan_once():
-        try:
-            r = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-                 "$me=" + str(me) + "; foreach ($p in (Get-CimInstance Win32_Process)) "
-                 "{ if ($p.ParentProcessId -eq $me -and $null -ne $p.CommandLine "
-                 "-and $p.CommandLine -like '*launchdeck_dashboard.py*') "
-                 "{ Write-Output ($p.ProcessId.ToString() + '|' + $p.Name + '|' + $p.ExecutablePath "
-                 "+ '|' + $p.ConvertToDateTime($p.CreationDate).ToString('yyyyMMddHHmmss')) } }"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
-                creationflags=getattr(core, "_NO_WINDOW", 0))
-        except Exception as e:
-            log(f"[reaper] scan failed: {e}")
-            return
-        now = datetime.datetime.now()
-        for line in (r.stdout or "").splitlines():
-            parts = line.strip().split("|")
-            if len(parts) < 4:
-                continue
-            pid_s, name, exe, born_s = (p.strip() for p in parts[:4])
-            if not pid_s.isdigit():
-                continue
-            pid = int(pid_s)
-            if pid == me:
-                continue
-            if (name or "").lower() not in ("python.exe", "pythonw.exe"):
-                continue
-            if not exe or (exe or "").lower() == mine:
-                continue  # same interpreter as us -- never touch
-            try:
-                born = datetime.datetime.strptime(born_s[:14], "%Y%m%d%H%M%S")
-            except Exception:
-                continue  # unparseable age -- touch nothing
-            if (now - born).total_seconds() < 90:
-                continue
-            log(f"[reaper] reaping stillborn twin pid={pid} exe={exe}")
-            try:
-                subprocess.run(["taskkill.exe", "/F", "/PID", str(pid)],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
-                               creationflags=getattr(core, "_NO_WINDOW", 0))
-            except Exception as e:
-                log(f"[reaper] reap failed: {e}")
-
-    time.sleep(first_delay)
-    while True:
-        try:
-            scan_once()
-        except Exception as e:
-            log(f"[reaper] {e}")
-        time.sleep(period)
-
-
-# --------------------------------------------------------------------------
 # work ops (shared by dashboard + quick menu)
 # --------------------------------------------------------------------------
 def work_by_id(wid):
@@ -730,9 +634,19 @@ def work_by_id(wid):
 
 def toggle_start_stop(work):
     """Start if stopped, stop if running. Returns status string."""
-    if core.is_running(work):
+    try:
+        commandlines = core.scan_commandlines()
+        if not core.scan_available() or not commandlines:
+            return f"status unavailable for '{work.get('label')}' (process scan failed)"
+    except Exception as e:
+        return f"status unavailable for '{work.get('label')}' ({e})"
+    if core.is_running(work, commandlines):
         try:
-            core.kill_work(work)
+            result = core.kill_work(work)
+            if result is not None:
+                detail = (" (no safe target)" if not result else
+                          " (PIDs " + ", ".join(map(str, result)) + ")")
+                return f"stop blocked '{work.get('label')}'{detail}"
             return f"stopped '{work.get('label')}'"
         except Exception as e:
             return f"stop failed: {e}"
@@ -914,7 +828,10 @@ class WorkTray(TrayIcon):
             return
         try:
             if act == "run":
-                log(toggle_start_stop(w))
+                # Hand off to the Tk side (_act_run -> worker thread). Running
+                # toggle_start_stop here blocked the tray message pump for the
+                # whole stop (scans + 2.5s wait): icon dead, Alt+W ignored.
+                actions.put(("run", wid))
             elif act == "log":
                 actions.put(("log", wid))  # dashboard opens the viewer
             else:
@@ -1040,6 +957,12 @@ class Dashboard:
             if w is not None:
                 self.show()
                 self.open_log_viewer(w)
+        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "run":
+            w = work_by_id(action[1])
+            if w is not None:
+                self._act_run(w)  # same double-fire guard as the row button
+        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "call":
+            action[1]()  # worker-thread completion, marshalled onto Tk
         elif action == "refresh":
             self.refresh()
         elif action == "quit":
@@ -1699,14 +1622,17 @@ class Dashboard:
             msg = fn()
         except Exception as e:
             msg = f"failed: {e}"
-        # Start/stop marks stay until the live snapshot CONFIRMS them
-        # (swept by _poll); only fire-and-forget marks clear here.
-        for k in pending_wids:
-            e = self._pending.get(k)
-            if e is not None and e.get("expect") is None:
-                self._pending.pop(k, None)
 
         def _done(m=msg):
+            # Runs on the Tk thread (via the actions queue): _pending is
+            # iterated by render/_sweep_pending there, and Tk itself is not
+            # thread-safe (root.after from a worker was the old path).
+            # Start/stop marks stay until the live snapshot CONFIRMS them
+            # (swept by _poll); only fire-and-forget marks clear here.
+            for k in pending_wids:
+                e = self._pending.get(k)
+                if e is not None and e.get("expect") is None:
+                    self._pending.pop(k, None)
             self.say(m)
             try:
                 _rescan.set()  # fresh scan NOW so confirm lands fast
@@ -1718,10 +1644,7 @@ class Dashboard:
                     tray_host.sync_parked()
             except Exception as e:
                 log(f"park sync: {e}")
-        try:
-            self.root.after(0, _done)
-        except Exception:
-            pass
+        actions.put(("call", _done))  # _poll (250ms) runs it on the Tk thread
 
     def open_log_viewer(self, w):
         """Live color tail for a detached work's log (docker-logs equivalent).
@@ -1842,7 +1765,11 @@ class Dashboard:
 
     def _do_restart(self, w):
         try:
-            core.kill_work(w)
+            result = core.kill_work(w)
+            if result is not None:
+                detail = (" (no safe target)" if not result else
+                          " (PIDs " + ", ".join(map(str, result)) + ")")
+                return f"restart blocked: stop '{w.get('label')}'{detail}"
         except Exception as e:
             return f"stop failed: {e}"
         time.sleep(1.5)
@@ -2038,15 +1965,26 @@ class Dashboard:
 
     def _do_all(self, members, start):
         msgs = []
+        try:
+            commandlines = core.scan_commandlines()
+            if not core.scan_available() or not commandlines:
+                return "status unavailable (process scan failed)"
+        except Exception as e:
+            return f"status unavailable ({e})"
         for m in members:
-            running = core.is_running(m)
+            running = core.is_running(m, commandlines)
             if start and not running:
                 r = core.launch_work(m)
                 msgs.append("started" if r else "FAILED")
             elif not start and running:
                 try:
-                    core.kill_work(m)
-                    msgs.append("stopped")
+                    result = core.kill_work(m)
+                    if result is None:
+                        msgs.append("stopped")
+                    else:
+                        detail = (" (no safe target)" if not result else
+                                  " (PIDs " + ", ".join(map(str, result)) + ")")
+                        msgs.append(f"blocked{detail}")
                 except Exception as e:
                     msgs.append(f"err {e}")
         return ", ".join(msgs) or "nothing to do"
@@ -2541,8 +2479,6 @@ def main():
         pass
     if "--self-test" in sys.argv:
         sys.exit(self_test())
-    if am_spawned_twin():
-        os._exit(0)
     ensure_single_instance()
     tray = WorkTray(tip=f"{APP_TIP} — starting…", color=(0, 120, 215))
     global tray_host
@@ -2552,8 +2488,6 @@ def main():
             log(f"tray not available: {tray.last_error}")
         th = threading.Thread(target=monitor_loop, args=(tray,), daemon=True)
         th.start()
-        rp = threading.Thread(target=reap_stillborn_twins, daemon=True)
-        rp.start()
         dash = Dashboard()
         dash.ensure()
         dash._ensure_hotkey()

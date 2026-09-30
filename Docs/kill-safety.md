@@ -15,9 +15,19 @@ relaxed.
 2. **PROTECTED set.** Scanner + launcher python PID + every ancestor of
    the launcher up to the root. Never in the kill list, even on token
    match. `powershell*` is never killed (hosts user sessions).
-3. **Token hygiene.** `kill_tokens_for` adds the bare work id only if
-   `len >= 4`; `kill_work` drops every token shorter than 3 chars.
-   (Detection via `titles_for`/`is_running` is unaffected.)
+3. **Token hygiene.** Kill seeds use the recorded runner path/name first;
+   generic executable names, short tokens, and bare work ids are rejected.
+   If the runner is gone, a configured path token must resolve to matching
+   branches under one common dev parent present in the process table; roots
+   with no shared parent are refused. Multiple exact generated runner roots
+   are treated as duplicate instances of that work, never as a union with a
+   second identity token. When a runner is present, an additional manually
+   started root is accepted only when its command line names a file below the
+   configured project path; a path mentioned only as `--env-file` or a
+   working-directory option is ignored. Codex trusted workers whose command
+   line only uses the project as a working directory are never seeds.
+   Detection via
+   `titles_for`/`is_running` is intentionally broader and is unaffected.
 4. **`dry_run` first.** `kill_work(work, dry_run=True)` returns the
    sorted kill PID list WITHOUT killing. Show it and get approval
    BEFORE any real kill when in doubt.
@@ -33,12 +43,14 @@ relaxed.
 ## The three close passes (§4.9)
 
 Over the SAME downward-only set: (1) graceful `taskkill /PID` (no `/F`,
-console close request); (2) Alt+F4 `WM_CLOSE` to every HWND in the
-guarded owner set (a leftover `cmd /k` host can be an *ancestor* of
-every seed — process-only DOWN kill can't reach it, closing its window
-terminates it via the console); (3) after a bounded 2.5s wait, per-PID
-`/F` sweep (`gowc kill` when present; gone PIDs report and are ignored).
-Ends with `clear_hidden_work` + `unregister`.
+console close request); (2) Alt+F4 `WM_CLOSE` to HWNDs owned by the same
+downward set and its console-host children; the kill path does not walk
+back into a user's hosting shell; (3) after a bounded 2.5s wait, revalidate
+the runner and unchanged descendants, then run the per-PID `/F` sweep
+(`gowc kill` when present; gone PIDs report and are ignored). A final scan
+must confirm all target PIDs are gone before `clear_hidden_work` +
+`unregister`; otherwise the registry is retained and the UI reports a
+blocked stop.
 
 ## Machine-side-effect rule (all sessions, all machines)
 

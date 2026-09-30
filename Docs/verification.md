@@ -4,6 +4,9 @@
 
 - `python test_launchdeck_core.py` passes (model build, detection, group OR,
   kill-via-group, Space OFF->ON -> Enter acts).
+- `python -m unittest -v test_kill_safety.py` passes using only mocked process
+  tables and subprocess calls (ambiguous roots, runner/PID reuse,
+  reparented descendants, failed sweeps, and scan failures).
 - Headless key-sequence simulation: Space -> `[X]`, Enter ->
   kill/launch, Esc -> quit.
 - **Manual smoke on Windows** (standing gate, still open): open

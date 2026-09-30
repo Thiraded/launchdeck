@@ -3,15 +3,20 @@
 // Commands:
 //
 //	gowc.exe scan          print pid|ppid|name|commandline lines (sorted by pid)
-//	gowc.exe kill <pid>..  TerminateProcess each PID; prints "killed <pid>" or
-//	                       "dead <pid>" (already gone / unopenable). Exit 0.
+//	gowc.exe kill <pid>..  TerminateProcess each PID; prints "killed <pid>",
+//	                       "dead <pid>" (already gone) or "denied <pid>"
+//	                       (alive but not openable/terminable). Exit 0.
 //	gowc.exe version       print version.
+//
+// scan exits 1 when the process snapshot itself fails (the caller then falls
+// back to powershell instead of trusting an empty table).
 //
 // scan reads command lines from the PEB (no powershell/WMI spawn).
 // 32-bit targets and protected processes yield an empty command line.
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"sort"
@@ -22,7 +27,7 @@ import (
 	"unsafe"
 )
 
-const gowcVersion = "gowc 1.0.0"
+const gowcVersion = "gowc 1.1.0"
 
 var (
 	kernel32                   = syscall.NewLazyDLL("kernel32.dll")
@@ -146,7 +151,7 @@ func sanitizeCmd(cmd string) string {
 
 func snapshotEntries() []processEntry32W {
 	snap, _, _ := pCreateToolhelp32Snapshot.Call(th32csSnapProcess, 0)
-	if snap == uintptr(^uint32(0)) {
+	if snap == ^uintptr(0) {
 		return nil
 	}
 	defer pCloseHandle.Call(snap)
@@ -164,6 +169,11 @@ func snapshotEntries() []processEntry32W {
 
 func scan() int {
 	entries := snapshotEntries()
+	if len(entries) == 0 {
+		// A live Windows machine never has zero processes: the snapshot failed.
+		fmt.Fprintln(os.Stderr, "gowc: process snapshot failed")
+		return 1
+	}
 	jobs := make(chan processEntry32W, len(entries))
 	out := make(chan procRow, len(entries))
 	var wg sync.WaitGroup
@@ -193,15 +203,23 @@ func scan() int {
 		rows = append(rows, r)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].pid < rows[j].pid })
+	w := bufio.NewWriterSize(os.Stdout, 64<<10) // one write, not one per row
 	for _, r := range rows {
-		fmt.Printf("%d|%d|%s|%s\n", r.pid, r.ppid, r.name, r.cmd)
+		fmt.Fprintf(w, "%d|%d|%s|%s\n", r.pid, r.ppid, r.name, r.cmd)
+	}
+	if err := w.Flush(); err != nil {
+		return 1
 	}
 	return 0
 }
 
+const errorInvalidParameter = 87 // OpenProcess on a PID that does not exist
+
 // kill terminates each PID in-process (the fast equivalent of N taskkill
-// calls). PIDs already gone report "dead" -- exit code stays 0 so a single
-// stale PID never fails the sweep.
+// calls). PIDs already gone report "dead"; a live PID we cannot open or
+// terminate (ACCESS_DENIED, protected) reports "denied" -- it used to be
+// reported "dead", i.e. a silent kill failure. Exit code stays 0 so a single
+// stale PID never fails the sweep; the caller confirms by re-scanning.
 func kill(pids []string) int {
 	for _, s := range pids {
 		n, err := strconv.ParseUint(s, 10, 32)
@@ -209,15 +227,19 @@ func kill(pids []string) int {
 			fmt.Printf("dead %s\n", s)
 			continue
 		}
-		h, _, _ := pOpenProcess.Call(processTerminate, 0, uintptr(n))
+		h, _, e := pOpenProcess.Call(processTerminate, 0, uintptr(n))
 		if h == 0 {
-			fmt.Printf("dead %d\n", n)
+			if errno, ok := e.(syscall.Errno); ok && errno == errorInvalidParameter {
+				fmt.Printf("dead %d\n", n)
+			} else {
+				fmt.Printf("denied %d\n", n)
+			}
 			continue
 		}
 		r1, _, _ := pTerminateProcess.Call(h, 1)
 		pCloseHandle.Call(h)
 		if r1 == 0 {
-			fmt.Printf("dead %d\n", n)
+			fmt.Printf("denied %d\n", n)
 			continue
 		}
 		fmt.Printf("killed %d\n", n)

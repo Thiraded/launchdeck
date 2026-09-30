@@ -14,6 +14,7 @@ Key concepts
   starts something, so kc can find + terminate the right processes quickly.
 """
 import json
+import ntpath
 import os
 import re
 import subprocess
@@ -40,6 +41,9 @@ SETTINGS = HERE / "launchdeck.settings.txt"
 # next to this file, scans/kills go through it (~0.2s vs ~0.9s per spawn).
 # Absent -> identical powershell fallbacks. Never a hard dependency.
 _GOWC = HERE / "gowc.exe"
+# Per-thread: the monitor thread and action workers scan concurrently, and a
+# shared flag let one thread's `scan_available()` read another's result.
+_SCAN_STATE = threading.local()
 
 
 def _gowc_available() -> bool:
@@ -57,6 +61,39 @@ _NEVER_SEED_GUI = frozenset({
     "brave.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe",
     "vivaldi.exe", "arc.exe", "explorer.exe", "discord.exe", "slack.exe",
     "teams.exe",
+})
+
+# The desktop agent can run a Node worker with a user's project directory as
+# an argument (for example, ``--working-dir D:\\HammonQuest``).  That path is
+# a working-directory reference, not a launch identity for the project.  Keep
+# those workers out of both process-tree seeding and window targeting.  The
+# marker is deliberately narrow: ordinary Node dev servers are unaffected.
+_NEVER_SEED_COMMAND_MARKERS = frozenset({
+    "trusted-worker.js",
+    "\\cua_node\\",
+})
+
+
+def _is_never_seed_name(name: str) -> bool:
+    """Return whether a process name must never seed a kill/hide traversal."""
+    value = str(name or "").strip().strip('"').replace("\\", "/")
+    return value.rsplit("/", 1)[-1].lower() in _NEVER_SEED_GUI
+
+
+def _is_never_seed_process(name: str, command: str = "") -> bool:
+    """Whether a row must never seed a work kill/window traversal."""
+    if _is_never_seed_name(name):
+        return True
+    cmd = str(command or "").replace("/", "\\").lower()
+    return any(marker in cmd for marker in _NEVER_SEED_COMMAND_MARKERS)
+
+# Kill matching is stricter than live detection. Bare executable names are
+# classes of processes, not identities for one work.
+_TARGET_VAR_NAMES = frozenset({"APPDIR", "PROJECT", "VSCDATA"})
+_GENERIC_PROCESS_TOKENS = frozenset({
+    "cmd", "cmd.exe", "conhost", "conhost.exe", "node", "node.exe",
+    "python", "python.exe", "pythonw", "pythonw.exe", "npm", "npm.cmd",
+    "npx", "npx.cmd", "powershell", "powershell.exe",
 })
 
 # The manifest most recently used to build the model. member_nodes() reads
@@ -107,39 +144,149 @@ def titles_for(work: dict) -> list[str]:
     return []
 
 
+def _specific_kill_token(token) -> bool:
+    """Whether *token* has enough identity to seed a kill traversal."""
+    value = str(token or "").strip().strip('"').lower()
+    if len(value) < 3 or value in _GENERIC_PROCESS_TOKENS:
+        return False
+    if value.startswith(GEN_BAT_PREFIX.lower()):
+        return True
+    if any(ch in value for ch in ("\\", "/", ":")):
+        return True
+    if value.endswith((".bat", ".cmd", ".lnk")):
+        return True
+    # A bare executable name identifies a program, not this work's instance.
+    if value.endswith((".exe", ".com", ".dll")):
+        return False
+    # Keep useful file-less service tokens, but reject short/common names.
+    return len(value) >= 8
+
+
+def _append_unique_token(out: list[str], token) -> None:
+    value = str(token or "").strip()
+    if value and _specific_kill_token(value) \
+            and value.lower() not in {x.lower() for x in out}:
+        out.append(value)
+
+
+def _is_shared_window_host(name: str) -> bool:
+    base = (name or "").strip().lower()
+    return base in {"explorer.exe", "windowsterminal.exe", "wt.exe"}
+
+
+def _windows_path_text(value) -> str:
+    """Normalize a path fragment for case-insensitive Windows cmd matching."""
+    return str(value or "").strip().strip('"').replace("/", "\\").lower()
+
+
+def _identity_token_matches(token: str, command: str) -> bool:
+    """Match an identity token at a path boundary, not inside another path.
+
+    ``D:\\HammonQuest`` must not match ``D:\\HammonQuest-old``.  A path
+    followed by a slash is the strongest form (a project file below the
+    configured directory); exact argument forms ending at whitespace/quotes
+    are also accepted for generated runner commands and ``cd`` steps.
+    """
+    needle = _windows_path_text(token)
+    haystack = _windows_path_text(command)
+    if not needle or not haystack:
+        return False
+    if "\\" not in needle and ":" not in needle:
+        return needle in haystack
+    start = haystack.find(needle)
+    while start >= 0:
+        end = start + len(needle)
+        if end == len(haystack) or haystack[end] in "\\/ \t\"'=;&":
+            return True
+        start = haystack.find(needle, start + 1)
+    return False
+
+
+def _primary_path_identity_matches(token: str, command: str) -> bool:
+    """Whether a path token names code launched from that directory.
+
+    A process can mention another work's directory only as configuration,
+    such as ``--env-file=D:\\HamsterWorld\\server\\.env``.  That is not
+    enough to claim the process for the work.  Require a file below the
+    directory and ignore common configuration/working-directory options.
+    """
+    needle = _windows_path_text(token)
+    haystack = _windows_path_text(command)
+    if not needle or "\\" not in needle or not haystack:
+        return False
+    start = haystack.find(needle)
+    weak_prefixes = (
+        "--env-file=", "--env-file ",
+        "--working-dir=", "--working-dir ",
+        "--cwd=", "--cwd ",
+        "--project=", "--project ",
+    )
+    file_suffixes = (".bat", ".cmd", ".js", ".cjs", ".mjs", ".py",
+                     ".exe", ".com")
+    while start >= 0:
+        end = start + len(needle)
+        if end < len(haystack) and haystack[end] in "\\/":
+            prefix = haystack[max(0, start - 64):start]
+            if not any(prefix.endswith(option) for option in weak_prefixes):
+                return True
+        elif needle.endswith(file_suffixes) \
+                and (end == len(haystack)
+                     or haystack[end] in " \t\"'=;&"):
+            prefix = haystack[max(0, start - 64):start]
+            if not any(prefix.endswith(option) for option in weak_prefixes):
+                return True
+        start = haystack.find(needle, start + 1)
+    return False
+
+
+def _runner_identity(work: dict, registry_info: dict) -> list[str]:
+    """Return identity strings for the process recorded as the launch root.
+
+    A registry PID is only trustworthy when its command line still names the
+    runner that created it.  Prefer the recorded absolute runner path; for old
+    registry entries without that field, use the deterministic runner name
+    from the current work.  Do not fall back to a broad ``match`` token here:
+    that is exactly how a recycled PID can become an unrelated kill root.
+    """
+    info = registry_info if isinstance(registry_info, dict) else {}
+    recorded = str(info.get("runner") or "").strip()
+    if recorded:
+        return [_windows_path_text(recorded)]
+    runner = ""
+    if work.get("steps"):
+        runner = gen_bat_name(work)
+    elif work.get("bat"):
+        runner = ntpath.basename(str(work.get("bat")))
+    return [_windows_path_text(runner)] if runner else []
+
+
 def kill_tokens_for(work: dict) -> list[str]:
-    """Match tokens to kill a work's process tree. Beyond `match` and the bat
-    basename (titles_for), we also include a low-cardinality token derived
-    from the work id so the outer `cmd /K "bat.bat"` wrapper is reachable
-    even when it has no match token of its own (e.g. GPT MCP's wrapper
-    CommandLine is just `cmd /K "GPT MCP.bat`)."""
-    toks = list(titles_for(work))
-    proj = work.get("proj")
-    if proj:
-        toks.append(proj)
-    # Always add a token that the outer wrapper is GUARANTEED to contain
-    # (the bat basename, or the work id if no bat). This makes the
-    # outermost `cmd /K "bat.bat"` (the one whose window the user sees)
-    # a seed so the tree walk includes it.
+    """Return identity-bearing tokens for a work's kill traversal.
+
+    Detection tokens stay broad, but kill tokens discard generic executable
+    names and short ids. Generated runner names and configured target paths
+    provide stable identities for the outer wrapper and its children.
+    """
+    toks: list[str] = []
+    for token in titles_for(work):
+        _append_unique_token(toks, token)
     bat = work.get("bat") or ""
     if bat:
         bn = os.path.basename(bat)
-        if bn and bn not in toks:
-            toks.append(bn)
-    wid = work.get("id") or ""
-    # Auto-adding the bare work id is a guess for reaching the outer
-    # `cmd /K "bat.bat"` wrapper -- but a short id (e.g. "a") matches the
-    # whole machine as a kill token (2026-09-05 incident). Only add it
-    # when it is specific enough to be safe.
-    if wid and wid not in toks and len(wid) >= 4:
-        toks.append(wid)
+        _append_unique_token(toks, bn)
     # Steps-works run a generated .bat (materialize_steps): its wrapper
     # CommandLine carries the gen name, so seed it exactly like a .bat
     # basename (deterministic -- computable here without launching).
     if work.get("steps"):
-        gen = gen_bat_name(work)
-        if gen not in toks:
-            toks.append(gen)
+        _append_unique_token(toks, gen_bat_name(work))
+    _append_unique_token(toks, work.get("proj"))
+    for name in _TARGET_VAR_NAMES:
+        raw = (work.get("vars") or {}).get(name)
+        if raw:
+            try:
+                _append_unique_token(toks, expand_work_vars(str(raw), work))
+            except Exception:
+                _append_unique_token(toks, raw)
     return toks
 
 
@@ -150,9 +297,23 @@ def scan_table() -> list[tuple[int, int, str, str]]:
     scan (find_work_hwnds alone did 3 = ~2.7s). No rows are excluded here;
     each consumer applies its own filters (powershell*, protected, ...)."""
     rows = _scan_table_gowc()
-    if rows is None:
+    # A successful-but-empty helper result is not a usable process table on a
+    # live Windows machine.  Fall back so a scan failure cannot turn Stop into
+    # Start or make a managed process look absent.
+    if not rows:
         rows = _scan_table_ps()
+    _SCAN_STATE.ok = bool(rows)
     return rows
+
+
+def scan_available() -> bool:
+    """Whether THIS thread's most recent process-table scan produced rows.
+
+    A Windows process table cannot legitimately be empty.  Callers that must
+    choose between Stop and Start use this guard so a transient WMI/helper
+    failure never turns an unknown running work into a second launch.
+    """
+    return bool(getattr(_SCAN_STATE, "ok", False))
 
 
 def _parse_table_rows(text: str) -> list[tuple[int, int, str, str]]:
@@ -210,8 +371,10 @@ def scan_commandlines() -> list[str]:
     shared scan. Call this once and reuse the list for many is_running checks
     instead of scanning per work (that's what made kc lag). Now a projection
     over scan_table (gowc-accelerated when present)."""
-    return [cmd for (_pid, _pp, name, cmd) in scan_table()
-            if cmd and not (name or "").lower().startswith("powershell")]
+    me = os.getpid()
+    return [cmd for (pid, _pp, name, cmd) in scan_table()
+            if pid != me and cmd
+            and not (name or "").lower().startswith("powershell")]
 
 
 def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
@@ -226,11 +389,9 @@ def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
         return False
     if commandlines is None:
         commandlines = scan_commandlines()
-    toks_low = [t.lower() for t in tokens]
     for line in commandlines:
-        low = line.lower()
-        for t in toks_low:
-            if t and t in low:
+        for t in tokens:
+            if t and _identity_token_matches(t, line):
                 return True
     return False
 
@@ -330,9 +491,11 @@ def materialize_steps(work: dict, visible: bool = False) -> str:
     # %LOGDIR% inside OLOG would otherwise survive literally.
     for k, v in work_vars(work).items():
         lines.append("set " + chr(34) + k + "=" + expand_work_vars(v, work) + chr(34))
-    lines.append(f"title {label}")
+    # The label is user text: unescaped, `A & calc` ran `calc` from `title`.
+    lines.append("title " + _cmd_escape(label))
     terms = [s for s in steps if (s.get("type") or "terminal") == "terminal"]
     last_term = terms[-1] if terms else None
+    has_cd = False
     for s in steps:
         cmd = str(s.get("cmd", "")).strip()
         if not cmd:
@@ -341,16 +504,57 @@ def materialize_steps(work: dict, visible: bool = False) -> str:
             lines.append(f'start "" {cmd}')
         elif visible and s is last_term:
             lines.append(f'cmd /k "{cmd}"')
+        elif _is_cd_step(cmd):
+            # A missing drive/dir used to fall through and run the next step
+            # (npm run dev) in the launcher's directory. Other steps keep
+            # plain semantics on purpose (`mkdir ... 2>nul` is expected to
+            # fail when the dir exists).
+            lines.append(cmd + " || goto :deck_cd_failed")
+            has_cd = True
         else:
             lines.append(cmd)
     lines.append("exit /b 0")
+    if has_cd:
+        # goto-label guard, never a (...) block (see bat-template.md).
+        lines += [":deck_cd_failed",
+                  "echo [deck] working directory not found -- steps aborted",
+                  "exit /b 1"]
+    body = chr(13) + chr(10)
+    text = body.join(lines) + body
+    if not text.isascii():
+        # cmd parses .bat files in the OEM codepage; switch to UTF-8 first
+        # so non-ASCII paths/labels survive (ASCII scripts stay untouched).
+        text = "@chcp 65001 >nul" + body + text
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wc_logs")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, gen_bat_name(work))
+    # cmd.exe reads a running .bat by byte offset: rewriting it under a live
+    # instance makes that instance resume mid-way through the NEW text. Only
+    # write when the content actually changed (the Restart case is identical).
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            if f.read() == text:
+                return path
+    except (OSError, UnicodeDecodeError):
+        pass
     with open(path, "w", encoding="utf-8", errors="replace", newline="") as f:
-        CRLF = chr(13) + chr(10)
-        f.write(CRLF.join(lines) + CRLF)
+        f.write(text)
     return path
+
+
+_CMD_META = "^&|<>()"
+
+
+def _cmd_escape(text: str) -> str:
+    """Escape cmd metacharacters so *text* is literal on an unquoted line."""
+    out = str(text).replace("%", "%%")
+    return "".join("^" + ch if ch in _CMD_META else ch for ch in out)
+
+
+def _is_cd_step(cmd: str) -> bool:
+    low = cmd.strip().lower()
+    return low == "cd" or low.startswith(("cd ", "cd/", "cd\\", "cd\"",
+                                          "chdir ", "pushd "))
 
 
 def parse_steps_text(text: str) -> list[dict]:
@@ -459,7 +663,7 @@ def strip_ansi(text: str) -> str:
     return "".join(seg for seg, _ in ansi_runs(text))
 
 
-def run_work(work: dict) -> None:
+def run_work(work: dict) -> bool:
     """Launch the work's .bat in a VISIBLE terminal window (no hidden
     self-relaunch). ONE window per work: `start` opens the window that
     hosts the .bat itself (mandatory -- without it the child would share
@@ -479,7 +683,7 @@ def run_work(work: dict) -> None:
             gen = ""
     runner = gen or bat
     if not runner or not os.path.exists(runner):
-        return
+        return False
     # Windows `start` treats the FIRST quoted token as the window title.
     # A single `""` is the title placeholder; the NEXT token is the command.
     # Passing `"" "" "bat"` made the 2nd empty string the command, which
@@ -496,18 +700,240 @@ def run_work(work: dict) -> None:
         # Fresh log per launch (docker-run semantics): append mode kept
         # every restart's history forever, so the viewer showed stale
         # output ("cache from old log"). The marker delimits runs.
-        logf = open(work_log_path(work), "w", encoding="utf-8",
-                    errors="replace")
-        logf.write(f"[deck] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
-        logf.flush()
-        subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
-                         stdout=logf, stderr=subprocess.STDOUT,
-                         stdin=subprocess.DEVNULL,
-                         creationflags=_NO_WINDOW)
-        register(work)
-        return
-    subprocess.Popen(["cmd.exe", "/c", "start", "", runner], shell=False)
-    register(work)
+        try:
+            logf = open(work_log_path(work), "w", encoding="utf-8",
+                        errors="replace")
+            logf.write(f"[deck] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
+            logf.flush()
+            proc = subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
+                                    stdout=logf, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL,
+                                    creationflags=_NO_WINDOW)
+            logf.close()
+        except Exception:
+            try:
+                logf.close()
+            except Exception:
+                pass
+            return False
+        register(work, pid=proc.pid, runner=runner)
+        return True
+    try:
+        subprocess.Popen(["cmd.exe", "/c", "start", "", runner], shell=False)
+    except Exception:
+        return False
+    register(work, runner=runner)
+    return True
+
+
+def _seed_pids_for_work(work: dict,
+                        table: list[tuple[int, int, str, str]],
+                        protected: set[int] | None = None) -> set[int]:
+    """Find safe root seeds without walking outside a work's identity.
+
+    A registered launch PID is preferred.  Otherwise runner identities may
+    select duplicate exact wrappers plus a manually started primary root from
+    the configured project path. Without a runner, path tokens are accepted
+    only when their matching roots share a live common dev parent; unrelated
+    roots are refused rather than merged into one kill.
+    """
+    by_parent = {pid: ppid for pid, ppid, _name, _cmd in table}
+    names = {pid: (name or "") for pid, _ppid, name, _cmd in table}
+    cmds = {pid: (cmd or "") for pid, _ppid, _name, cmd in table}
+    protected = set(protected or ())
+    toks = [t.lower() for t in kill_tokens_for(work)]
+    if not toks:
+        return set()
+
+    registry = _load_registry()
+    info = registry.get(work.get("id"), {})
+    if not isinstance(info, dict):
+        info = {}
+    rejected_registry_pid = 0
+    preferred_registry_pid = 0
+    try:
+        registered_pid = int(info.get("pid"))
+    except (TypeError, ValueError):
+        registered_pid = 0
+    if registered_pid in cmds:
+        command = cmds[registered_pid].lower()
+        runner_ids = [x for x in _runner_identity(work, info) if x]
+        runner_matches = bool(runner_ids) and any(
+            _identity_token_matches(identity, command) for identity in runner_ids)
+        try:
+            recorded_parent = int(info.get("parent_pid"))
+        except (TypeError, ValueError):
+            recorded_parent = 0
+        parent_matches = (not recorded_parent or
+                          by_parent.get(registered_pid) == recorded_parent)
+        host_name = ntpath.basename(names.get(registered_pid, "")).lower()
+        if registered_pid not in protected \
+                and not _is_never_seed_process(
+                    names.get(registered_pid, ""), command) \
+                and not names.get(registered_pid, "").lower().startswith("powershell") \
+                and host_name in {"cmd.exe", "cmd"} \
+                and parent_matches and runner_matches:
+            preferred_registry_pid = registered_pid
+        else:
+            # A present but mismatching launch PID is a possible PID reuse.
+            # Keep it out of fallback matching, but allow a fresh root with
+            # the recorded runner identity to be found safely.
+            rejected_registry_pid = registered_pid
+    # The recorded process may have exited normally while its GUI child stays
+    # alive (for example, a `start` step). In that case the strict token path
+    # below may still identify the child; ambiguity is refused there.
+
+    rejected_tree: set[int] = set()
+    if rejected_registry_pid:
+        rejected_tree.add(rejected_registry_pid)
+        changed = True
+        while changed:
+            changed = False
+            for pid, parent_pid in by_parent.items():
+                if parent_pid in rejected_tree and pid not in rejected_tree:
+                    rejected_tree.add(pid)
+                    changed = True
+
+    def _match_info(token: str) -> tuple[set[int], set[int]]:
+        matches = {
+            pid for pid, command in cmds.items()
+            if command and _identity_token_matches(token, command)
+            and pid not in protected
+            and pid not in rejected_tree
+            and not names.get(pid, "").lower().startswith("powershell")
+            and not _is_never_seed_process(names.get(pid, ""), command)
+        }
+        if not matches:
+            return set(), set()
+        roots = set()
+        for pid in matches:
+            cur = pid
+            seen = set()
+            has_matching_parent = False
+            while cur not in seen:
+                seen.add(cur)
+                cur = by_parent.get(cur, 0)
+                if not cur:
+                    break
+                if cur in matches:
+                    has_matching_parent = True
+                    break
+            if not has_matching_parent:
+                roots.add(pid)
+        return matches, roots
+
+    def _configured_path_tokens() -> list[str]:
+        paths = [
+            str(token) for token in titles_for(work)
+            if "\\" in str(token) or ":" in str(token)
+        ]
+        if not paths:
+            for var_name in ("APPDIR", "PROJECT", "VSCDATA"):
+                raw = (work.get("vars") or {}).get(var_name)
+                if raw and ("\\" in str(raw) or ":" in str(raw)):
+                    paths.append(expand_work_vars(str(raw), work))
+                    break
+        return paths
+
+    def _manual_primary_roots(path_tokens: list[str],
+                              excluded: set[str]) -> set[int]:
+        found: set[int] = set()
+        for path_token in path_tokens:
+            if _windows_path_text(path_token) in excluded:
+                continue
+            _path_matches, path_roots = _match_info(path_token)
+            found.update(
+                pid for pid in path_roots
+                if _primary_path_identity_matches(
+                    path_token, cmds.get(pid, "")))
+        return found
+
+    runner_tokens = [t for t in _runner_identity(work, info) if t]
+    if preferred_registry_pid:
+        path_tokens = _configured_path_tokens()
+        runner_set = {_windows_path_text(x) for x in runner_tokens}
+        return {preferred_registry_pid} | _manual_primary_roots(
+            path_tokens, runner_set)
+
+    # A runner basename is stronger than a user-supplied match/path token.
+    # Multiple exact generated runner roots are duplicate launches of this
+    # same work (a common result of a previously blocked Stop), so they are
+    # all safe seeds; only a primary path below the configured project may be
+    # added as a manually started instance.
+    for token in runner_tokens:
+        matches, roots = _match_info(token)
+        if matches:
+            runner_roots = {
+                pid for pid in roots
+                if ntpath.basename(names.get(pid, "")).lower() in {"cmd", "cmd.exe"}
+                and _identity_token_matches(token, cmds.get(pid, ""))
+            }
+            if runner_roots:
+                # Also pick up an instance started manually from the same
+                # configured project directory.  Only a primary file path
+                # counts here; a foreign ``--env-file`` reference does not.
+                runner_set = {_windows_path_text(x) for x in runner_tokens}
+                return runner_roots | _manual_primary_roots(
+                    _configured_path_tokens(), runner_set)
+            return set()
+
+    # The wrapper may already have exited while a child remains.  Accept
+    # fallback tokens only when every usable token belongs to the same tree.
+    candidates: list[int] = []
+    for token in toks:
+        matches, roots = _match_info(token)
+        if "\\" in token or ":" in token:
+            roots = {pid for pid in roots
+                     if _primary_path_identity_matches(
+                         token, cmds.get(pid, ""))}
+        if roots:
+            candidates.extend(roots)
+    if not candidates:
+        return set()
+
+    def _ancestors(pid: int) -> list[int]:
+        chain = []
+        cur = pid
+        seen = set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            chain.append(cur)
+            cur = by_parent.get(cur, 0)
+        return chain
+
+    # Several services from one dev workspace can be sibling branches under a
+    # shared dev runner (frontend + backend is the normal example).  Accept
+    # those roots when the common parent is present in this table and is not a
+    # shared desktop host.  We still seed only the matching roots and walk
+    # DOWN from them; the common parent itself is never added to the kill set.
+    common = set(_ancestors(candidates[0]))
+    for root in candidates[1:]:
+        common.intersection_update(_ancestors(root))
+    if not common:
+        return set()
+    common_pid = next((pid for pid in _ancestors(candidates[0])
+                       if pid in common and pid in names), 0)
+    if not common_pid or common_pid in protected or _is_never_seed_process(
+            names.get(common_pid, ""), cmds.get(common_pid, "")):
+        return set()
+    # Prefer the deepest candidate when one token matched an ancestor and
+    # another matched its child. This keeps fallback matching DOWN-only and
+    # avoids turning a user's hosting shell into a kill seed.
+    seeds = set(candidates)
+
+    def _is_ancestor(ancestor: int, child: int) -> bool:
+        cur = child
+        seen = set()
+        while cur and cur not in seen:
+            if cur == ancestor:
+                return True
+            seen.add(cur)
+            cur = by_parent.get(cur, 0)
+        return False
+
+    return {root for root in seeds
+            if not any(root != other and _is_ancestor(root, other)
+                       for other in seeds)}
 
 
 def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
@@ -543,20 +969,24 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     powershell* processes are never killed (they host user sessions).
 
     With dry_run=True, returns the sorted kill PID list WITHOUT killing —
-    show it to the user BEFORE any real kill. Otherwise kills each PID,
-    unregisters the work, and returns None.
+    show it to the user BEFORE any real kill. A successful real kill returns
+    None. If identity revalidation or the force sweep leaves a target alive,
+    the surviving PID list is returned and the registry entry is retained so
+    the caller can report the blocked stop and retry safely.
     """
     # Drop dangerously short tokens (1-2 chars match the whole machine --
     # e.g. a 1-letter work id). Killing is destructive: a tiny token can
     # never be what anyone wants. Detection (is_running) is unaffected.
     toks = [t for t in kill_tokens_for(work) if len(t) >= 3]
     if not toks:
-        return [] if dry_run else None
+        return []
     my_pid = os.getpid()  # the python (wc) process -- never touch
     # Seeds + DOWN expansion computed in pure Python over ONE shared table
     # (no per-kill PowerShell scan; Trap: NEVER use $pid as a loop variable
     # applied to the old inline script -- gone with it).
     table = scan_table()
+    if not table:
+        return []
     by_parent: dict[int, int] = {}
     names: dict[int, str] = {}
     cmds: dict[int, str] = {}
@@ -583,30 +1013,20 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
             break
         prot.add(anc)
         cur = anc
-    # Seeds: CommandLine token match, skipping powershell* + NEVER-seed GUI
-    # + protected. (PowerShell -like is case-insensitive substring, matched
-    # here with .lower(); our tokens carry no -like wildcards.)
-    toks_low = [t.lower() for t in toks]
-    seed: set[int] = set()
-    for pid, cmd in cmds.items():
-        if not cmd or _is_ps(pid):
-            continue
-        if names.get(pid, "").lower() in _NEVER_SEED_GUI:
-            continue
-        if pid in prot:
-            continue
-        low = cmd.lower()
-        if any(t and t in low for t in toks_low):
-            seed.add(pid)
+    # Seeds are either a validated registered launch root or an unambiguous
+    # identity-token match.  Neither path walks upward to find kill roots.
+    seed = _seed_pids_for_work(work, table, prot)
     # Expand DOWN ONLY (BFS over children). Protected PIDs are never added
     # even if parented under a seed; powershell* is traversed through but
     # never added (it hosts user sessions).
     kill: set[int] = set()
     seen: set[int] = set()
+    root_for: dict[int, int] = {}
     queue = list(seed)
     for s in seed:
         seen.add(s)
         kill.add(s)
+        root_for[s] = s
     while queue:
         c = queue.pop()
         for ch in children.get(c, []):
@@ -615,8 +1035,11 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
             seen.add(ch)
             if not _is_ps(ch):
                 kill.add(ch)
+            root_for[ch] = root_for.get(c, c)
             queue.append(ch)
     pids = sorted(kill)
+    if not pids:
+        return []
     if dry_run:
         return pids
     def _tk(args: list[str], timeout: int) -> None:
@@ -639,12 +1062,85 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     # closing the WINDOW is what removes it. Same guarded owner set as
     # the `h` key (protected chain + badgui never included).
     try:
-        close_work_windows(work)
+        close_work_windows(work, target_pids=set(pids), target_table=table)
     except Exception:
         pass
     # Bounded wait so the closes can land (windows die fast, and
     # stragglers are swept in pass 3 -- this sleep never gates on state).
     time.sleep(2.5)
+    # Refresh the table before the destructive pass.  A PID may have exited
+    # and been reused during the graceful/window-close wait; only retain a
+    # PID whose name, parent, and command line still match the original row.
+    revalidated = False
+    try:
+        fresh = scan_table()
+        if not fresh:
+            raise RuntimeError("process scan unavailable during revalidation")
+        current = {pid: (ppid, name or "", cmd or "")
+                   for pid, ppid, name, cmd in fresh}
+        original = {pid: (by_parent.get(pid, 0), names.get(pid, ""),
+                          cmds.get(pid, "")) for pid in pids}
+        original_pids = set(pids)
+
+        def _same_identity(pid: int) -> bool:
+            """Check the stable process identity, ignoring a changed PPID."""
+            row = current.get(pid)
+            old = original.get(pid)
+            return bool(row and old and row[1:] == old[1:])
+
+        def _root_is_current(root: int) -> bool:
+            # A launch root is expected to keep its parent.  A changed root
+            # is treated as PID reuse, never as a force-kill candidate.
+            return root in current and current[root] == original.get(root)
+
+        def _safe_descendant(pid: int, root: int) -> bool:
+            """Validate an unchanged original descendant without PPID pinning.
+
+            Windows reparents a child when a wrapper exits.  Walking the
+            *original* parent chain keeps that orphan target safe while still
+            rejecting a changed intermediate PID.  A present root with any
+            changed identity blocks the whole branch.
+            """
+            if pid == root or not _same_identity(pid):
+                return False
+            cur = pid
+            chain_seen: set[int] = set()
+            while cur != root:
+                if cur in chain_seen:
+                    return False
+                chain_seen.add(cur)
+                parent_pid = by_parent.get(cur, 0)
+                if parent_pid not in original_pids:
+                    return False
+                if parent_pid in current and not _same_identity(parent_pid):
+                    return False
+                cur = parent_pid
+            return not (root in current and not _root_is_current(root))
+
+        keep: set[int] = set()
+        for root in seed:
+            if _root_is_current(root):
+                keep.add(root)
+            elif root in current:
+                # The root still exists but its identity changed: it may be
+                # an unrelated process with a recycled PID.
+                continue
+            # If the root is gone, unchanged descendants may have been
+            # reparented and remain safe to sweep.
+            for pid in pids:
+                if root_for.get(pid) == root and _safe_descendant(pid, root):
+                    keep.add(pid)
+        pids = sorted(keep)
+        revalidated = True
+    except Exception:
+        # If identity cannot be revalidated, the graceful pass has already
+        # been attempted, but a force sweep is unsafe. Keep the registry so
+        # the UI reports that the stop needs another attempt.
+        revalidated = False
+
+    if not revalidated:
+        return sorted(set(pids))
+
     # Pass 3 (sweep): kill stragglers -- ONE gowc call when available
     # (in-process TerminateProcess; already-gone PIDs report "dead" and are
     # ignored), else the per-PID taskkill /F loop. No /T ever: tree-kill
@@ -663,6 +1159,22 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     if not swept:
         for kpid in pids:
             _tk(["/F", "/PID", str(kpid)], 10)
+
+    # Do not claim success merely because taskkill/gowc returned.  Both can
+    # report success for a stale PID, and a permissions or protected-process
+    # failure is otherwise silent.  A second scan is still read-only; if it
+    # fails, retain the registry and report the targets as unresolved.
+    if pids:
+        try:
+            after_sweep = scan_table()
+        except Exception:
+            return sorted(set(pids))
+        if not after_sweep:
+            return sorted(set(pids))
+        live_after = {pid for pid, _ppid, _name, _cmd in after_sweep}
+        remaining = sorted(pid for pid in pids if pid in live_after)
+        if remaining:
+            return remaining
     clear_hidden_work(work)  # dead windows need no tracking
     unregister(work)
     return None
@@ -671,7 +1183,8 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
 WM_CLOSE = 0x0010  # Alt+F4 / clicking X -- the graceful window close
 
 
-def close_work_windows(work: dict) -> int:
+def close_work_windows(work: dict, target_pids: set[int] | None = None,
+                       target_table: list[tuple[int, int, str, str]] | None = None) -> int:
     """Post WM_CLOSE (Alt+F4) to every top-level window in the work's tree.
 
     Killing the task alone can leave the bare terminal window behind
@@ -686,7 +1199,17 @@ def close_work_windows(work: dict) -> int:
     the number of windows confirmed gone afterwards (bounded ~2s wait).
     Never raises; 0 means "no windows found / nothing to close".
     """
-    hwnds = find_work_hwnds(work)
+    if target_pids is None:
+        hwnds = find_work_hwnds(work)
+    else:
+        table = target_table if target_table is not None else scan_table()
+        current_pids = set(target_pids)
+        # Kill owns only the downward set. Do not walk from a child back into
+        # a user's hosting shell just to close a window; that ancestor is not
+        # part of the task being stopped. One level of children still catches
+        # the console host owned by the target.
+        hwnds = _hwnds_for_pids(current_pids, table,
+                                include_ancestors=False)
     if not hwnds:
         return 0
     try:
@@ -741,33 +1264,17 @@ def find_work_hwnds(work: dict) -> list[int]:
     def _is_ps(pid: int) -> bool:
         return names.get(pid, "").lower().startswith("powershell")
 
-    toks_low = [t.lower() for t in toks]
     pids = {pid for pid, cmd in cmds.items()
             if cmd and not _is_ps(pid)
-            and names.get(pid, "").lower() not in _NEVER_SEED_GUI
-            and any(t and t in cmd.lower() for t in toks_low)}
+            and not _is_never_seed_process(names.get(pid, ""), cmd)
+            and any(_identity_token_matches(t, cmd) for t in toks)}
     if not pids:
         return []
-    # 2) walk to ancestors (pure Python, same rules as the old inline
-    # script) so we also hide the cmd.exe host
-    allp = set(pids)
-    for s in list(pids):
-        cur = s
-        while True:
-            ppid = by_parent.get(cur, 0)
-            if not ppid:
-                break
-            par_name = names.get(ppid)
-            if par_name is None:
-                break
-            if par_name.lower().startswith("powershell"):
-                break
-            if ppid in allp:
-                break
-            allp.add(ppid)
-            cur = ppid
-    pids = allp
-    # 3) find top-level windows owned by any of these PIDs (Win32 EnumWindows)
+    # 2+3) owner set + EnumWindows. The ancestor walk (to reach the cmd.exe
+    # host) lives ONLY in _hwnds_for_pids: bounded, stops at our protected
+    # chain, and climbs through cmd.exe hosts only. The unbounded copy that
+    # used to sit here reached explorer.exe / Code.exe for manually started
+    # runs, and the one-level-down pass then pulled in every app they own.
     found = _hwnds_for_pids(pids, table)
     # 4) exact-title match: every launcher sets `title <works.json label>`
     # (§4.8), so the window is also findable by title when PID-ownership
@@ -783,7 +1290,8 @@ def find_work_hwnds(work: dict) -> list[int]:
 
 
 def _hwnds_for_pids(pids: set[int],
-                    table: list[tuple[int, int, str, str]] | None = None) -> list[int]:
+                    table: list[tuple[int, int, str, str]] | None = None,
+                    include_ancestors: bool = True) -> list[int]:
     """Enumerate top-level windows owned by the work's process tree.
 
     A console window is owned by conhost.exe, typically a CHILD of the
@@ -833,20 +1341,27 @@ def _hwnds_for_pids(pids: set[int],
         if s in prot or is_ps(s):
             continue
         owners.add(s)
-    # Up from each seed (bounded, stop at protected/missing/root).
-    for s in list(owners):
-        cur, depth = s, 0
-        while depth < 8:
-            par = parent.get(cur, 0)
-            if not par or par in prot:
-                break
-            if not is_ps(par):
+    if include_ancestors:
+        # Up from each seed through cmd.exe hosts ONLY (bounded, stop at
+        # protected/missing/root). Anything else -- powershell, explorer,
+        # an IDE, a terminal app -- is the user's host, not the work's:
+        # walking through it would reach Code.exe/explorer.exe and the
+        # one-level-down pass below would then grab all of their windows.
+        for s in list(owners):
+            cur, depth = s, 0
+            while depth < 8:
+                par = parent.get(cur, 0)
+                if not par or par in prot:
+                    break
+                if ntpath.basename(names.get(par, "")).lower() not in ("cmd.exe", "cmd"):
+                    break
                 owners.add(par)
-            cur, depth = par, depth + 1
+                cur, depth = par, depth + 1
     # One level down (conhost + wrapper cmds). Never protected/powershell.
     for o in list(owners):
         for ch in children.get(o, []):
-            if ch in prot or is_ps(ch):
+            if ch in prot or is_ps(ch) \
+                    or _is_shared_window_host(names.get(ch, "")):
                 continue
             owners.add(ch)
     if not owners:
@@ -1159,35 +1674,117 @@ def sweep_hidden_windows(manifest: dict) -> dict[str, int]:
 
 # registry  (so kc can list + kill running works quickly)
 # --------------------------------------------------------------------------
+# State files are read-modify-written by the TUI, the dashboard, and several
+# worker threads. A truncating write_text let a concurrent reader see a
+# half-written file (-> {} -> written back, dropping every key), and two
+# writers lost each other's update. Writes now go to a temp file and are
+# swapped in with os.replace (atomic on NTFS); read-modify-write sequences
+# hold an in-process lock plus a cross-process named mutex.
+_STATE_LOCK = threading.RLock()
+
+
+class _StateMutex:
+    """Cross-process lock (Windows named mutex); no-op elsewhere/on error."""
+
+    NAME = "Local\\launchdeck-state"
+
+    def __enter__(self):
+        self._h = None
+        if os.name != "nt":
+            return self
+        try:
+            import ctypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.CreateMutexW.restype = ctypes.c_void_p
+            k32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                         ctypes.c_wchar_p]
+            k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+            k32.WaitForSingleObject.restype = ctypes.c_uint
+            h = k32.CreateMutexW(None, 0, self.NAME)
+            if h:
+                # WAIT_OBJECT_0 (0) or WAIT_ABANDONED (0x80) both mean owned.
+                if k32.WaitForSingleObject(h, 5000) in (0, 0x80):
+                    self._h, self._k32 = h, k32
+                else:
+                    k32.CloseHandle(ctypes.c_void_p(h))
+        except Exception:
+            self._h = None
+        return self
+
+    def __exit__(self, *exc):
+        if self._h:
+            import ctypes
+            try:
+                self._k32.ReleaseMutex(ctypes.c_void_p(self._h))
+            finally:
+                self._k32.CloseHandle(ctypes.c_void_p(self._h))
+        return False
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        # A reader holding the file open can make replace fail briefly.
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.02)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+
+
 def _load_registry() -> dict:
     try:
-        return json.loads(REGISTRY.read_text(encoding="utf-8"))
+        data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
 def _save_registry(data: dict) -> None:
     try:
-        REGISTRY.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _atomic_write_text(REGISTRY, json.dumps(data, indent=2))
     except Exception:
         pass
 
 
-def register(work: dict) -> None:
+def _update_registry(fn) -> None:
+    """Locked read-modify-write of registry.json (fn mutates the dict)."""
+    with _STATE_LOCK, _StateMutex():
+        data = _load_registry()
+        fn(data)
+        _save_registry(data)
+
+
+def register(work: dict, pid: int | None = None, runner: str = "") -> None:
     """Record that `work` was launched (with a timestamp)."""
-    data = _load_registry()
-    data[work["id"]] = {
+    entry = {
         "label": work.get("label", work["id"]),
         "bat": work.get("bat", ""),
         "launched": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    _save_registry(data)
+    if pid:
+        entry["pid"] = int(pid)
+        entry["parent_pid"] = os.getpid()
+    if runner:
+        entry["runner"] = str(runner)
+    _update_registry(lambda data: data.__setitem__(work["id"], entry))
 
 
 def unregister(work: dict) -> None:
-    data = _load_registry()
-    data.pop(work["id"], None)
-    _save_registry(data)
+    _update_registry(lambda data: data.pop(work["id"], None))
 
 
 def registry_running() -> list[dict]:
@@ -1234,8 +1831,10 @@ class Node:
         self.work = work
         self.group_members = group_members or []
 
-    def is_running(self):
-        return is_running(self.work) if self.work else False
+    def is_running(self, commandlines: list[str] | None = None):
+        """Pass a shared `commandlines` scan; without it this spawns a full
+        process scan PER CALL (recompute_states used to do 2 per member)."""
+        return is_running(self.work, commandlines) if self.work else False
 
 
 def build_model(manifest: dict) -> list[Node]:
@@ -1292,10 +1891,10 @@ def group_selected(member_states: dict, members: list[Node]) -> bool:
 def set_group_selection(states: dict, members: list[Node], value: str) -> None:
     for m in members:
         if value == ON:
-            if states.get(m.key) != RUN:
+            if states.get(m.key) != LEFT_ALONE:
                 states[m.key] = ON
         else:  # clear
-            if states.get(m.key) == ON:
+            if states.get(m.key) in (ON, RUN):
                 states[m.key] = OFF
 
 
@@ -1303,18 +1902,27 @@ def enter_action(state: str, node: Node, model: list[Node], states: dict | None 
     """Return list of (action, work) to run/kill. Group acts on its members."""
     if states is None:
         states = {}
+    # ONE scan for the whole decision. If it failed, "not running" is
+    # unknown, not false: never turn it into a second launch.
+    cls = scan_commandlines()
+    if not scan_available():
+        return []
     if node.kind == "group":
         members = member_nodes(model, node)
         if state == ON:
-            acts = [("run", m.work) for m in members if not m.is_running()]
+            acts = []
+            for m in members:
+                if states.get(m.key) == LEFT_ALONE:
+                    continue
+                acts.append(("kill" if m.is_running(cls) else "run", m.work))
             return acts
         if state == RUN:
             acts = [("kill", m.work) for m in members
-                    if m.is_running() and states.get(m.key) != LEFT_ALONE]
+                    if m.is_running(cls) and states.get(m.key) != LEFT_ALONE]
             return acts
         return []
     # work node
-    if state == ON and not node.is_running():
+    if state == ON and not node.is_running(cls):
         return [("run", node.work)]
     if state == RUN:
         return [("kill", node.work)]
@@ -1326,15 +1934,18 @@ def recompute_states(model: list[Node], states: dict) -> None:
     Selection of a child is preserved; groups are always derived."""
     # 1) mark running children (but never override an explicit ON selection --
     #    if the user selected a running work to kill, keep it ON so Space sticks)
-    for n in model:
-        if n.kind != "group":
-            continue
-        members = member_nodes(model, n)
-        for m in members:
-            if m.is_running() and states.get(m.key) == OFF:
-                states[m.key] = RUN
-            elif states.get(m.key) == RUN and not m.is_running():
-                states[m.key] = OFF
+    #    ONE shared scan; a failed scan keeps the last known RUN marks.
+    cls = scan_commandlines()
+    if scan_available():
+        for n in model:
+            if n.kind != "group":
+                continue
+            for m in member_nodes(model, n):
+                running = m.is_running(cls)
+                if running and states.get(m.key) == OFF:
+                    states[m.key] = RUN
+                elif states.get(m.key) == RUN and not running:
+                    states[m.key] = OFF
     # 2) derive group selection from children (pure OR)
     for n in model:
         if n.kind == "group":
@@ -1374,10 +1985,14 @@ GRACE_SECONDS = 12
 # from ever looping forever. (No work should need longer than this to show it
 # is alive-and-well.)
 STABLE_MAX_SECONDS = 60
-# Global ceiling on how many times wc will spawn `start ""` in one run.
-MAX_LAUNCHES = 16
+# Runaway guard: at most LAUNCH_BURST starts of ONE work per LAUNCH_WINDOW_S.
+# (Was a lifetime MAX_LAUNCHES=16 per process -- the tray lives for days, so
+# the 17th Start/Restart silently did nothing until the deck was restarted.)
+LAUNCH_BURST = 5
+LAUNCH_WINDOW_S = 60.0
 
-_launched_count = 0
+_launch_times: dict[str, list[float]] = {}
+_launch_lock = threading.Lock()
 
 ERROR_KEYWORDS = (
     "traceback", "fatal error", "error:", "exception in",
@@ -1405,24 +2020,29 @@ def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | Non
     a monitor record, or None if the .bat is missing. Caller (wc) decides
     whether to kill a running instance first -- this just launches.
 
-    SAFETY: never spawns more than MAX_LAUNCHES windows total. The launcher
-    window opens then immediately `pause`s (harmless) -- the REAL process is
-    what we detect/kill.
+    SAFETY: a single work can start at most LAUNCH_BURST times per
+    LAUNCH_WINDOW_S (stops a runaway retry loop, never a normal session).
     """
-    global _launched_count
     wid = work.get("id", "")
     if not wid:
         return None
-    if _launched_count >= MAX_LAUNCHES:
-        return None
+    now = time.monotonic()
+    with _launch_lock:
+        recent = [t for t in _launch_times.get(wid, [])
+                  if now - t < LAUNCH_WINDOW_S]
+        _launch_times[wid] = recent
+        if len(recent) >= LAUNCH_BURST:
+            return None
     # Steps-works (backlog #2) materialize their own runner inside
     # run_work; `bat`, when present, is only a fallback for them.
     if not work.get("steps"):
         realbat = work.get("bat")
         if not realbat or not os.path.exists(realbat):
             return None
-    run_work(work)   # spawns the .bat in its own visible window (per launchdeck_core)
-    _launched_count += 1
+    if not run_work(work):
+        return None
+    with _launch_lock:
+        _launch_times.setdefault(wid, []).append(time.monotonic())
     return {"id": wid, "label": work.get("label", wid), "work": work,
             "launched": time.time(), "already": False}
 
@@ -1461,8 +2081,13 @@ def slug_group_id(label, manifest=None):
 
 
 def save_manifest(manifest) -> None:
-    """Write works.json -- the single writer for editor/group/delete ops."""
-    MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    """Write works.json -- the single writer for editor/group/delete ops.
+
+    Atomic replace: a concurrent load_manifest() (monitor, 3s poll) used to
+    hit the truncated file and get an EMPTY manifest back."""
+    with _STATE_LOCK, _StateMutex():
+        _atomic_write_text(
+            MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
 _HOTKEY_MODS = {"ctrl": 0x2, "control": 0x2, "alt": 0x1,

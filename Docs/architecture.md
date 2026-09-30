@@ -27,7 +27,9 @@ consumer: `gowc.exe scan` when present (~0.07s), else one powershell
 
 Matching is case-insensitive substring (`-like` semantics; our tokens
 carry no `-like` wildcards). Excludes `powershell*` (+ own chain where
-it matters). `WINDOWTITLE` is not used — see `requirements.md`.
+it matters). An empty helper/WMI result is marked unavailable, so a Stop
+or Start action never treats an unknown scan as "stopped". `WINDOWTITLE`
+is not used — see `requirements.md`.
 
 ## Launch (`launch_work` -> `run_work`)
 
@@ -39,18 +41,33 @@ its own `"log"` key tails that file instead. Visible mode
 (`cmd.exe /c start "" <bat>`, exactly one `""` title placeholder — a
 stray second `""` once made it open Explorer instead) remains for
 works without the key. `register(work)` records
-`{label, bat, launched}` into `registry.json`. The deck never auto-closes after launch;
+`{label, bat, launched, pid, parent_pid, runner}` for detached roots (and the runner
+for visible launches) into `registry.json`. A recorded PID is used only when
+its command line still names the same runner. The deck never auto-closes after launch;
 it is a persistent manager.
 
-`_launched_count` / `MAX_LAUNCHES` caps total spawns per session.
+Runaway guard: one work may start at most `LAUNCH_BURST` (5) times per
+`LAUNCH_WINDOW_S` (60s). (Was a lifetime `MAX_LAUNCHES`=16 per process,
+which silently disabled Start in a long-lived tray.)
+
+Generated runners (`materialize_steps`): label escaped for cmd
+(`^&|<>()`, `%%`), `cd`/`pushd` steps end in `|| goto :deck_cd_failed`,
+`@chcp 65001` only when the script is non-ASCII, and the file is not
+rewritten when unchanged (cmd reads a running .bat by offset).
+
+State files (`registry.json`, `works.json`) are written via temp file +
+`os.replace` under a lock + named mutex; `scan_available()` is per-thread.
 
 ## Kill (`kill_work`)
 
 Evolved past its original form (Terminate-every-match). Current design
 lives in `kill-safety.md`: DOWN-ONLY seeds + descendants, protected
-chain, NEVER-seed GUI list, token hygiene, `dry_run`, then three close
-passes (graceful taskkill, Alt+F4 `WM_CLOSE`, `/F` sweep). Ends with
-`clear_hidden_work` + `unregister`.
+chain, NEVER-seed GUI list, token hygiene, registry runner identity,
+common-parent validation for multi-process dev works, exact duplicate-runner
+handling, `dry_run`, then three close passes (graceful
+taskkill, Alt+F4 `WM_CLOSE`, identity revalidation, `/F` sweep). A final
+scan confirms the targets are gone before `clear_hidden_work` +
+`unregister`; a failed scan or surviving PID is reported as blocked.
 
 ## Model / groups (`build_model`)
 

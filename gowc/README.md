@@ -15,5 +15,7 @@ Graduated from `spikes/002-gowc-scan` (VALIDATED: 0 content mismatches vs
 
 - `scan` -> stdout lines `pid|ppid|name|commandline` sorted by pid
   (16-worker fan-out; 32-bit/protected targets come out with empty cmd)
-- `kill <pid>..` -> `killed <pid>` / `dead <pid>` per PID, exit 0 always
-- `version` -> `gowc 1.0.0`
+  (exit 1 if the snapshot itself fails)
+- `kill <pid>..` -> `killed <pid>` / `dead <pid>` / `denied <pid>` per PID,
+  exit 0 always
+- `version` -> `gowc 1.1.0`

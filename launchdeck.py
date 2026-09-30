@@ -53,13 +53,19 @@ def _refresh_running_loop(manifest):
     while True:
         try:
             commandlines = core.scan_commandlines()
+            if not core.scan_available() or not commandlines:
+                raise RuntimeError("process scan unavailable")
             s = {
                 w["id"] for w in manifest.get("works", [])
                 if w.get("detect") is not False
                 and core.is_running(w, commandlines)
             }
         except Exception:
-            s = set()
+            # Keep the last known state.  Treating a transient empty/error
+            # scan as "nothing running" would turn Enter into an accidental
+            # launch and can create a second tree while the first is alive.
+            time.sleep(2.0)
+            continue
         with _running_lock:
             _running_cache = s
         time.sleep(2.0)
@@ -143,7 +149,12 @@ def is_node_running(n) -> bool:
 
 def state_box(s: str, running: bool = False) -> str:
     # [X] = selected to act on (Space toggles); [-] = running (info only).
-    box = f"{GREEN}[X]{RESET}" if s == core.ON else f"{DIM}[ ]{RESET}"
+    if s == core.ON:
+        box = f"{GREEN}[X]{RESET}"
+    elif s == core.LEFT_ALONE:
+        box = f"{DIM}[.]{RESET}"
+    else:
+        box = f"{DIM}[ ]{RESET}"
     if running:
         box += f" {MAGENTA}[-]{RESET}"
     return box
@@ -339,23 +350,42 @@ def act_on_selected(model, states):
     # Snapshot the live-running set the user is looking at.
     with _running_lock:
         running_set = set(_running_cache)
-    killed, launched = [], []
+    killed, launched, blocked = [], [], []
+    try:
+        commandlines = core.scan_commandlines()
+        scan_ok = core.scan_available() and bool(commandlines)
+    except Exception:
+        commandlines, scan_ok = [], False
     for node in sel:
         if not node.work:
             continue
         w = node.work
-        is_run = node.key in running_set or core.is_running(w)
+        is_run = node.key in running_set
+        if not is_run and scan_ok:
+            is_run = core.is_running(w, commandlines)
+        if not is_run and not scan_ok:
+            blocked.append(f"STATUS UNKNOWN: {w.get('label', w['id'])}")
+            continue
         if is_run:
-            core.kill_work(w)
-            killed.append(w.get("label", w["id"]))
+            result = core.kill_work(w)
+            if result is not None:
+                detail = (" (no safe target)" if not result else
+                          " (PIDs " + ", ".join(map(str, result)) + ")")
+                blocked.append(f"STOP BLOCKED: {w.get('label', w['id'])}{detail}")
+            else:
+                killed.append(w.get("label", w["id"]))
         else:
-            core.launch_work(w)
-            launched.append(w.get("label", w["id"]))
+            if core.launch_work(w) is None:
+                blocked.append(f"START FAILED: {w.get('label', w['id'])}")
+            else:
+                launched.append(w.get("label", w["id"]))
     parts = []
     if killed:
         parts.append(f"Killed: {', '.join(killed)}")
     if launched:
         parts.append(f"Launched: {', '.join(launched)}")
+    if blocked:
+        parts.append(" | ".join(blocked))
     return " | ".join(parts) if parts else "Nothing to do"
 
 
@@ -402,7 +432,7 @@ def main():
 
         node = rows[cursor][0]
 
-        if ch == " " or ch in ("t", "T"):  # Space OR 't' toggles selection
+        if ch == " ":
             key = node.key
             if node.kind == "group":
                 members = core.member_nodes(model, node)
@@ -412,6 +442,19 @@ def main():
                     core.set_group_selection(states, members, core.ON)
             else:
                 states[key] = core.next_on_space(states.get(key, core.OFF))
+            continue
+
+        if ch in ("t", "T"):
+            if node.kind == "group":
+                members = core.member_nodes(model, node)
+                leaving = any(states.get(m.key) != core.LEFT_ALONE
+                              for m in members)
+                for member in members:
+                    states[member.key] = (core.LEFT_ALONE if leaving
+                                          else core.OFF)
+            else:
+                states[node.key] = (core.OFF if states.get(node.key)
+                                    == core.LEFT_ALONE else core.LEFT_ALONE)
             continue
 
         if ch in ("\r", "\n", "\x0d", "\x0a"):  # Enter (any form) -> kill running / launch not-running

@@ -5,12 +5,17 @@
 1. **Seeds**: CommandLine token match over the shared table (minus
    powershell*, NEVER-seed GUI, plus the `.bat` basename + long-enough
    work id via `kill_tokens_for`).
-2. **Ancestors**: bounded walk up (8, stops at our protected chain) so
-   the `cmd` host is included. Upward-only matching alone misses,
-   because matchable seeds (node) sit BELOW the window owner.
-3. **Owner set** (`_hwnds_for_pids`): seeds + bounded ancestors + ONE
+2. **Ancestors** (only in `_hwnds_for_pids`): bounded walk up (8, stops
+   at our protected chain) THROUGH `cmd.exe` HOSTS ONLY, so the `cmd`
+   host is included. Upward-only matching alone misses, because
+   matchable seeds (node) sit BELOW the window owner. Any other parent
+   (powershell, IDE, explorer, terminal app) stops the walk: it is the
+   user's host. (2026-09-30: `find_work_hwnds` had its own UNBOUNDED
+   copy of this walk that reached Code.exe/explorer.exe for manual runs;
+   removed, covered by `test_find_work_hwnds_never_climbs_into_ide_or_explorer`.)
+3. **Owner set** (`_hwnds_for_pids`): seeds + bounded cmd ancestors + ONE
    level of children (catches conhost + wrapper cmds, which own the
-   visible window). Powershell traversed, never added. EnumWindows
+   visible window). Powershell never added. EnumWindows
    keeps top-level windows owned by the set that are `IsWindowVisible`.
 4. **Exact title** (`_title_hwnds_guarded`): window title exactly equals
    the work label (case-insensitive), minus shared-host guard. Catches

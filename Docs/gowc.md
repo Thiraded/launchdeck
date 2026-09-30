@@ -9,10 +9,12 @@ powershell fallbacks — never a hard dependency.
 - `scan` -> stdout lines `pid|ppid|name|commandline` sorted by pid
   (16-worker fan-out over `CreateToolhelp32Snapshot`; command lines
   from the PEB via `NtQueryInformationProcess` + `ReadProcessMemory`).
-- `kill <pid>..` -> `killed <pid>` / `dead <pid>` per PID, exit 0
-  always (in-process `TerminateProcess`; a stale PID never fails
-  the sweep).
-- `version` -> version string.
+  Exit 1 when the snapshot fails (core falls back to powershell).
+- `kill <pid>..` -> `killed <pid>` / `dead <pid>` (gone) / `denied <pid>`
+  (alive, not terminable -- was misreported as `dead` before 1.1.0) per
+  PID, exit 0 always (in-process `TerminateProcess`; a stale PID never
+  fails the sweep; core confirms with a re-scan).
+- `version` -> version string (`gowc 1.1.0`).
 
 ## Numbers (live, ~275 procs)
 

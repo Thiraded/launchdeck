@@ -41,12 +41,15 @@
 
 ## Known issues (accepted, documented)
 
-- deck uv-venv twin: TWO pythonw processes (parent+child) survive;
-  election should reap the younger but currently doesn't always.
-  Single tray window exists, so impact is limited to confusion --
-  investigate election next if it recurs.
-- `registry.json` churns at runtime (the deck rewrites it for hidden
-  tracking and can drop keys it didn't write) -- normal, never commit.
+- deck uv-venv "twin" (FIXED 2026-09-30, unverified live): two pythonw
+  processes is NORMAL -- the venv redirector (parent, never runs Python)
+  + the real deck (child). The old birth-time election could make the
+  real deck exit at boot; the reaper looked for children, never the
+  parent. Replaced by the named mutex `Local\launchdeck-dashboard`.
+- `registry.json` dropped keys (FIXED 2026-09-30): truncating writes +
+  unlocked read-modify-write races, not "churn". Now atomic replace +
+  in-process lock + named mutex `Local\launchdeck-state` (manifest too).
+  Still runtime state -- never commit.
 - omniroute-cli/web detection-positive on Brave tab URLs (cosmetic;
   do not "fix" by broadening tokens).
 - Pre-existing orphans (PARK-era invisible cmd) -- never auto-touched.
