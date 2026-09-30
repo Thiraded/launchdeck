@@ -83,6 +83,44 @@ class DashboardSmoke(unittest.TestCase):
                 self.assertTrue(win.winfo_exists())
                 d._close_popup(win)
 
+    def test_row_start_and_start_all_dispatch(self):
+        """Per-row Start regressed once (a local named `state` shadowed the
+        module -> UnboundLocalError on click). Drive both paths."""
+        d = self.d
+        d.refresh()
+        with mock.patch.object(state, "toggle_start_stop",
+                               return_value="started 'API'") as tss, \
+                mock.patch("threading.Thread") as th:
+            d._act_run(FAKE["works"][1])
+            self.assertEqual(d._pending["api"]["state"], "starting")
+            target = th.call_args.kwargs["target"]
+            target(*th.call_args.kwargs["args"])
+            tss.assert_called_once()
+            d._pending.clear()
+            d._act_all([FAKE["works"][1]], True)
+            self.assertEqual(d._pending["api"]["state"], "starting")
+
+    def test_no_local_shadows_a_module(self):
+        import ast
+        import symtable
+        from pathlib import Path
+        bad = []
+        for p in Path("deck/ui").glob("*.py"):
+            src = p.read_text(encoding="utf-8")
+            mods = {"core"} | {a.asname or a.name for n in ast.walk(ast.parse(src))
+                               if isinstance(n, ast.ImportFrom) and n.module == "deck.ui"
+                               for a in n.names}
+
+            def walk(t):
+                if t.get_type() == "function":
+                    bad.extend(f"{p.name}:{t.get_name()}:{s.get_name()}"
+                               for s in t.get_symbols()
+                               if s.get_name() in mods and (s.is_local() or s.is_parameter()))
+                for c in t.get_children():
+                    walk(c)
+            walk(symtable.symtable(src, str(p), "exec"))
+        self.assertEqual(bad, [])
+
     def test_log_viewer_opens(self):
         d = self.d
         with mock.patch.object(core, "work_log_path") as lp, \

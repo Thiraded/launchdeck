@@ -18,7 +18,7 @@ LOG_FG = {
 # the same icon without a migration.
 ICON_CHOICES = ["zap", "monitor", "gamepad-2", "globe", "package", "rocket",
                 "wrench", "palette", "bot", "database", "file-text", "music",
-                "terminal", "server"]
+                "terminal", "server", "code", "map", "app-window"]
 EMOJI_ICON = dict(zip(["\u26a1", "\U0001f5a5", "\U0001f3ae", "\U0001f310",
                        "\U0001f4e6", "\U0001f680", "\U0001f527", "\U0001f3a8",
                        "\U0001f916", "\U0001f4be", "\U0001f4dd", "\U0001f3b5"],

@@ -17,9 +17,9 @@ class ActionsMixin:
         if wid in self._pending:
             self.say(f"already {self._pending[wid].get('state', 'working')} '{label}'…")
             return
-        state = "stopping" if wid in state.running_snapshot() else "starting"
-        self._act_async(lambda: state.toggle_start_stop(w), f"{state} '{label}'…",
-                        pending={wid: (state, state == "starting")})
+        verb = "stopping" if wid in state.running_snapshot() else "starting"
+        self._act_async(lambda: state.toggle_start_stop(w), f"{verb} '{label}'…",
+                        pending={wid: (verb, verb == "starting")})
 
     def _do_hide(self, w):
         # Retired: detached is the only mode, nothing to hide or show.
@@ -67,10 +67,10 @@ class ActionsMixin:
         if not fresh:
             self.say("already working…")
             return
-        state = "starting" if start else "stopping"
+        verb = "starting" if start else "stopping"
         self._act_async(lambda: self._do_all(members, start),
-                        f"{state} {len(fresh)} work(s)…",
-                        pending={k: (state, bool(start)) for k in fresh})
+                        f"{verb} {len(fresh)} work(s)…",
+                        pending={k: (verb, bool(start)) for k in fresh})
 
     def _move_work(self, w, direction):
         """Custom sort: swap with the adjacent visible sibling, persist.
