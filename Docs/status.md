@@ -1,5 +1,14 @@
 # Status — current state and open gates (2026-09-06 evening)
 
+## 2026-09-30 — pending live check
+
+- Dashboard moved to `deck/ui/` and redesigned with SVG icons + DPI
+  awareness. Tests: kill_safety + tray_foundation + ui_smoke (fake
+  manifest, 54 OK). A Dashboard rendered on the fake manifest was
+  checked visually at 100% scale, dark + light. NOT yet verified: a
+  live deck restart, 125/150% scaling, the tray hotkey after the DPI
+  change.
+
 ## Live right now
 
 - hamster-clint: RUNNING (vite :5175, HTTP 200 — started through the

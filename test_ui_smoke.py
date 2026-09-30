@@ -92,5 +92,33 @@ class DashboardSmoke(unittest.TestCase):
             d.root.update_idletasks()
 
 
+class IconRenderer(unittest.TestCase):
+    def test_every_asset_renders_with_ink(self):
+        for name in icons.names():
+            m = icons.mask(name, 20)
+            self.assertEqual(len(m), 400, name)
+            self.assertGreater(sum(m), 5, f"{name} rendered empty")
+            self.assertTrue(all(0.0 <= a <= 1.0 for a in m), name)
+
+    def test_png_is_valid_rgba(self):
+        png = icons.compose("play", 16, "#FFFFFF", box=24, plate="#3E7BFA")
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(png[12:16], b"IHDR")
+        self.assertEqual(int.from_bytes(png[16:20], "big"), 24)
+
+    def test_glued_arc_flags_parse(self):
+        # 'a.5.5 0 011 1' style: flags glued to the next number
+        subs = icons._path_points("M0 0a1 1 0 011 1")
+        self.assertAlmostEqual(subs[0][0][-1][0], 1.0)
+        self.assertAlmostEqual(subs[0][0][-1][1], 1.0)
+
+    def test_legacy_glyphs_and_emoji_map_to_icons(self):
+        from deck.ui import widgets
+        self.assertEqual(widgets.icon_name("🗑"), "trash-2")
+        self.assertEqual(widgets.icon_name("\U0001f3ae"), "gamepad-2")
+        self.assertEqual(widgets.icon_name("server"), "server")
+        self.assertIsNone(widgets.icon_name("🦄"))  # text fallback
+
+
 if __name__ == "__main__":
     unittest.main()

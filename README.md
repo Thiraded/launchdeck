@@ -68,7 +68,7 @@ Two frontends, one shared core (`launchdeck_core.py`, zero dependencies):
   ],
   "match": "D:\\examples\\web-client",
   "detect": true,
-  "icon": "⚡"
+  "icon": "zap"
 }
 ```
 

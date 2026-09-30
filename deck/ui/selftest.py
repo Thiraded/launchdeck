@@ -105,9 +105,9 @@ def self_test():
     assert not sh.winfo_exists()
     print("self-test: borderless popup shell + close OK")
     cb = th_circle_btn(d.root, "▶", lambda: None, style="accent")
-    assert len(cb.find_all()) == 2, "circle button must be oval+glyph"
+    assert cb.cget("image"), "circle button must render the SVG icon"
     assert cb.cget("cursor") == "hand2"
-    assert hasattr(cb, "recolor")
+    assert hasattr(cb, "recolor") and hasattr(cb, "set_icon")
     cb.destroy()
     print("self-test: circle button OK")
     w = next(x for x in manifest["works"] if x.get("id") == "hamster-clint")

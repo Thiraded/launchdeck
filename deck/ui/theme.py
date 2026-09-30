@@ -13,7 +13,16 @@ LOG_FG = {
     "bright-white": "#ffffff",
 }
 
-ICON_CHOICES = ["\u26a1", "\U0001f5a5", "\U0001f3ae", "\U0001f310", "\U0001f4e6", "\U0001f680", "\U0001f527", "\U0001f3a8", "\U0001f916", "\U0001f4be", "\U0001f4dd", "\U0001f3b5"]
+# Work icons: SVG names (assets/icons). works.json written before
+# 2026-09-30 holds emoji; EMOJI_ICON maps those so old manifests render
+# the same icon without a migration.
+ICON_CHOICES = ["zap", "monitor", "gamepad-2", "globe", "package", "rocket",
+                "wrench", "palette", "bot", "database", "file-text", "music",
+                "terminal", "server"]
+EMOJI_ICON = dict(zip(["\u26a1", "\U0001f5a5", "\U0001f3ae", "\U0001f310",
+                       "\U0001f4e6", "\U0001f680", "\U0001f527", "\U0001f3a8",
+                       "\U0001f916", "\U0001f4be", "\U0001f4dd", "\U0001f3b5"],
+                      ICON_CHOICES))
 
 DOT_ON, DOT_OFF = "🟢", "⚪"
 

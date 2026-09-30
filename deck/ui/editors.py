@@ -6,10 +6,10 @@ import tkinter as tk
 
 from launchdeck_tray import unregister_hotkey
 import launchdeck_core as core
-from deck.ui import state
+from deck.ui import dpi, icons, state
 from deck.ui import theme
 from deck.ui.viewmodel import _swap_adjacent, _unique_id, _work_to_form
-from deck.ui.widgets import th_button, th_circle_btn
+from deck.ui.widgets import icon_name, th_button, th_circle_btn
 
 
 class EditorsMixin:
@@ -250,7 +250,7 @@ class EditorsMixin:
             "label": tk.StringVar(value=(work or {}).get("label", "")),
             "bat": tk.StringVar(value=(work or {}).get("bat", "")),
             "match": tk.StringVar(value=str((work or {}).get("match", ""))),
-            "icon": tk.StringVar(value=(work or {}).get("icon", "⚡")),
+            "icon": tk.StringVar(value=(work or {}).get("icon") or "zap"),
             "group": tk.StringVar(value=""),
             "detect": tk.BooleanVar(value=(work or {}).get("detect", True)),
         }
@@ -276,10 +276,29 @@ class EditorsMixin:
                   width=9).grid(row=2, column=2, padx=8)
         tk.Label(body, text="Icon", bg=theme.TH_BG, fg=theme.TH_FG).grid(
             row=4, column=0, sticky="w", padx=8, pady=3)
-        om_icon = tk.OptionMenu(body, vals["icon"], *theme.ICON_CHOICES)
+        # SVG names; a legacy emoji already in works.json stays selectable
+        # (saved back verbatim unless the user picks a new one).
+        choices = list(theme.ICON_CHOICES)
+        if vals["icon"].get() not in choices:
+            choices.append(vals["icon"].get())
+        om_icon = tk.OptionMenu(body, vals["icon"], *choices)
         om_icon.configure(bg=theme.TH_FIELD, fg=theme.TH_INPUT_FG, relief="flat", bd=0,
-                          activebackground=theme.TH_BTN_HI, highlightthickness=0)
+                          activebackground=theme.TH_BTN_HI, highlightthickness=0,
+                          compound="left")
         om_icon["menu"].configure(bg=theme.TH_FIELD, fg=theme.TH_INPUT_FG)
+        isz = dpi.px(16)
+        for i, name in enumerate(choices):
+            if icon_name(name):
+                om_icon["menu"].entryconfigure(
+                    i, image=icons.photo(icon_name(name), isz, theme.TH_INPUT_FG),
+                    compound="left")
+
+        def _icon_preview(*_a):
+            n = icon_name(vals["icon"].get())
+            om_icon.configure(image=icons.photo(n, isz, theme.TH_INPUT_FG)
+                              if n else "")
+        vals["icon"].trace_add("write", _icon_preview)
+        _icon_preview()
         om_icon.grid(row=4, column=1, sticky="w", padx=8)
         tk.Label(body, text="Group", bg=theme.TH_BG, fg=theme.TH_FG).grid(
             row=5, column=0, sticky="w", padx=8, pady=3)

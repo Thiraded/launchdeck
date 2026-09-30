@@ -9,7 +9,7 @@ import tkinter as tk
 from launchdeck_tray import register_hotkey
 from launchdeck_tray import unregister_hotkey
 import launchdeck_core as core
-from deck.ui import state
+from deck.ui import dpi, icons, state
 from deck.ui import theme
 from deck.ui.actions import ActionsMixin
 from deck.ui.editors import EditorsMixin
@@ -41,6 +41,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             return
         theme._apply_palette(state.dashboard_theme())
         r = tk.Tk()
+        dpi.scale(r)  # px() for pixel sizes; fonts scale via tk scaling
         r.title("Works")
         # Borderless popup (backlog #5): no title bar, no X -- clicking
         # outside dismisses it, so chrome is dead weight.
@@ -50,8 +51,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         r.resizable(False, False)
         try:
             sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-            W, H = 480, 600
-            r.geometry(f"{W}x{H}+{sw - W - 16}+{sh - H - 60}")
+            W, H = dpi.px(480), dpi.px(600)
+            r.geometry(f"{W}x{H}+{sw - W - dpi.px(16)}+{sh - H - dpi.px(60)}")
         except Exception:
             pass
         # Brand hairline: 2px accent strip, the only saturated thing
@@ -61,15 +62,15 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         top.pack(fill="x", padx=14, pady=(12, 2))
         tk.Label(top, text="Works", font=theme.TH_FONT_TITLE,
                  bg=theme.TH_BG, fg=theme.TH_FG).pack(side="left")
-        th_button(top, text="+ New", command=self.open_editor,
-                  width=8, accent=True).pack(side="right")
-        th_button(top, text="+ Group",
+        th_button(top, text="New", command=self.open_editor,
+                  accent=True, icon="plus").pack(side="right")
+        th_button(top, text="Group",
                   command=lambda: self.open_group_editor(None),
-                  width=8).pack(side="right", padx=(0, 4))
-        th_circle_btn(top, "⌨", command=self.open_settings,
+                  icon="folder-plus").pack(side="right", padx=(0, 4))
+        th_circle_btn(top, "settings", command=self.open_settings,
                       style="ghost").pack(side="right", padx=(0, 4))
-        th_circle_btn(top, "⟳", command=self.refresh,
-                      style="ghost").pack(side="right", padx=(0, 4))
+        th_circle_btn(top, "rotate-cw", command=self.refresh,
+                      style="ghost").pack(side="right", padx=(0, 2))
         self.status_var = tk.StringVar(value="")
         tk.Label(r, textvariable=self.status_var, fg=theme.TH_DIM, bg=theme.TH_BG,
                  font=("Segoe UI", 9)).pack(fill="x", padx=14, pady=(0, 2))
@@ -237,21 +238,25 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             pass
         self.visible = False
 
-    def _place_near_tray(self, win=None, W=480, H=600):
+    def _place_near_tray(self, win=None, W=None, H=None):
         """Pin a window bottom-right (taskbar/resolution may have moved).
 
         The dashboard pins to the corner; secondary windows (log viewer)
         sit LEFT of it when it is visible instead of on top of it.
+        W/H are device pixels; default = the dashboard (480x600 design px).
         """
         try:
             win = win or self.root
+            W = W or dpi.px(480)
+            H = H or dpi.px(600)
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-            x = sw - W - 16
+            edge, bar = dpi.px(16), dpi.px(60)
+            x = sw - W - edge
             if win is not self.root and self.visible:
-                x = x - 400 - 12
+                x = x - dpi.px(400) - dpi.px(12)
                 if x < 0:
-                    x = sw - W - 16
-            win.geometry(f"{W}x{H}+{x}+{sh - H - 60}")
+                    x = sw - W - edge
+            win.geometry(f"{W}x{H}+{x}+{sh - H - bar}")
         except Exception:
             pass
 
@@ -405,7 +410,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         ttl = tk.Label(head, text=title, font=theme.TH_FONT_B,
                        bg=theme.TH_BG, fg=theme.TH_FG)
         ttl.pack(side="left")
-        th_circle_btn(head, "×", lambda: self._close_popup(win),
+        th_circle_btn(head, "x", lambda: self._close_popup(win),
                       style="ghost").pack(side="right")
         self._draggable(win, head, ttl)
         body = tk.Frame(outer, bg=theme.TH_BG)
@@ -430,6 +435,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
                 self.root.destroy()
         except Exception:
             pass
+        icons.clear_cache()  # images belong to the dead root + old palette
         self.root = None
         self.status_var = None
         self.list_frame = None

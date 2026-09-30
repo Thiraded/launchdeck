@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 import traceback
 
-from deck.ui import state
+from deck.ui import dpi, state
 from deck.ui.app import Dashboard
 from deck.ui.instance import ensure_single_instance
 from deck.ui.selftest import self_test
@@ -24,6 +24,9 @@ def main():
     if "--self-test" in sys.argv:
         sys.exit(self_test())
     ensure_single_instance()
+    # before ANY window (tray hwnd included): otherwise Windows
+    # bitmap-stretches the deck at 125/150% scaling (blurry).
+    dpi.enable()
     tray = WorkTray(tip=f"{state.APP_TIP} — starting…", color=(0, 120, 215))
     state.tray_host = tray
     try:

@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 
 import launchdeck_core as core
-from deck.ui import theme
+from deck.ui import dpi, theme
 from deck.ui.widgets import _open_link, _tag_links, th_button
 
 
@@ -39,7 +39,7 @@ class LogViewerMixin:
             self.say(f"log path failed: {e}")
             return
         win, body = self._popup_shell(f"log: {label}")
-        self._place_near_tray(win, 760, 460)
+        self._place_near_tray(win, dpi.px(760), dpi.px(460))
         self._track_popup(win)
         self._log_wins[wid] = win
         txt = tk.Text(body, wrap="none", bg="#1e1e1e", fg="#d4d4d4",

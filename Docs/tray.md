@@ -115,6 +115,29 @@ toggle; a theme switch rebuilds the popup (`_rebuild`, retires the old
 settings) are borderless (`_popup_shell`: hairline edge + custom
 header with title + ×, drag by the header) — no OS title bar anywhere.
 
+## SVG icon redesign + DPI (2026-09-30, supersedes the glyph notes above)
+
+Every icon is an SVG from `assets/icons`, rendered antialiased by
+`deck/ui/icons.py` (see `architecture.md` → Icons). No emoji or Unicode
+glyphs are used for UI chrome any more: those rendered as monochrome/tofu
+at uneven sizes.
+- Row: rounded icon tile (tinted green / dim / accent by state) + title
+  + a status word led by a colored dot. Toggle = the ONLY filled circle
+  (accent play / neutral stop). Log / restart / edit are ghost (dim, a
+  plate only on hover). Delete is ghost-dim and turns red only on hover,
+  and it still asks for confirmation.
+- Header: ghost refresh + settings, "Group" (folder-plus) and accent
+  "New" (plus). Group head: chevron + label + green "n/m running".
+- `works.json` `"icon"` takes an SVG name (`theme.ICON_CHOICES`). Old
+  emoji values map through `theme.EMOJI_ICON`. An unknown value renders
+  as text in the same tile. The editor's icon menu previews each icon.
+- DPI: `dpi.enable()` runs in `main()` before any window (system-aware).
+  Window sizes and icons go through `dpi.px()`. Fonts scale via Tk.
+  Verified only at 100% in the render check. 125/150% still needs a
+  live look.
+- `th_circle_btn` / `th_button` keep their old signatures (legacy glyphs
+  map via `widgets.GLYPH_ICON`), plus `.set_icon()` and `icon=`.
+
 ## Transitional states + log toggle (2026-09-06)
 
 Every Start/Stop/Restart/Hide/Start-all lands instantly: the row shows
