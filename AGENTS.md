@@ -19,7 +19,7 @@ two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md
 | Path | Role |
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (id/label/bat/match/detect). |
-| `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. |
+| `launchdeck_core.py` + `deck/core/` | Shared logic: manifest, detection, run/kill, registry, model. NO UI. `deck/core/jobs.py` = Job Object launch/stop (`Docs/kill-safety.md`). |
 | `launchdeck.py` / `launchdeck_dashboard.py` (`launchdeck.bat`, `launchdeck-tray.bat`) | The two frontends (funnel through core). Dashboard code is in `deck/ui/` (map: `Docs/architecture.md`). |
 | `assets/icons/*.svg` | UI icons, rendered by `deck/ui/icons.py` (stdlib). |
 | `launchdeck_tray.py` | Tray primitives (ctypes only). Reference; see `Docs/tray.md`. |
@@ -28,7 +28,7 @@ two frontends. `kc` is dead — do not resurrect. Details: `Docs/architecture.md
 | `gowc/` + `gowc.exe` | Optional Go scan/kill accelerator (see `Docs/gowc.md`). |
 | `registry.json` | Runtime: launches, hidden tracking. Churns; normal. |
 | `launchdeck.settings.txt` | Selection preset. |
-| `test_launchdeck_core.py`, `test_tray_foundation.py`, `test_kill_safety.py`, `test_ui_smoke.py` | Tests (policy in `Docs/verification.md`). Only `test_launchdeck_core.py` spawns processes. |
+| `test_launchdeck_core.py`, `test_tray_foundation.py`, `test_kill_safety.py`, `test_ui_smoke.py`, `test_jobs.py` | Tests (policy in `Docs/verification.md`). `test_launchdeck_core.py` and opt-in `test_jobs.py` spawn processes. |
 | `Docs/` | ALL knowledge (below). `spec-*.md` history stays at root. |
 
 Outside the repo: Desktop keeps only `launchdeck.lnk`; `%LOCALAPPDATA%\wc-bin`

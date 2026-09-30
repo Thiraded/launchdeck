@@ -22,6 +22,8 @@ import threading
 import time
 from pathlib import Path
 
+from deck.core import jobs
+
 # Background subprocesses (powershell scans, taskkill) must not flash a
 # console window when the deck runs under pythonw (no console to
 # inherit, so Windows pops a visible terminal on EVERY scan otherwise).
@@ -384,6 +386,8 @@ def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
     a powershell per call."""
     if work.get("detect") is False:
         return False
+    if jobs.eligible(work) and jobs.managed(work.get("id", ""), _NEVER_SEED_GUI):
+        return True
     tokens = titles_for(work)
     if not tokens:
         return False
@@ -705,10 +709,19 @@ def run_work(work: dict) -> bool:
                         errors="replace")
             logf.write(f"[deck] launch {time.strftime('%Y-%m-%d %H:%M:%S')} :: {runner}\n")
             logf.flush()
-            proc = subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
-                                    stdout=logf, stderr=subprocess.STDOUT,
-                                    stdin=subprocess.DEVNULL,
-                                    creationflags=_NO_WINDOW)
+            popen_kw = dict(stdout=logf, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL)
+            proc = None
+            if jobs.eligible(work):
+                # Kernel-owned identity: the job IS the kill set. If the job
+                # cannot be used the child was killed before it ran; fall back.
+                try:
+                    proc = jobs.spawn(work["id"], ["cmd.exe", "/c", runner], **popen_kw)
+                except OSError:
+                    proc = None
+            if proc is None:
+                proc = subprocess.Popen(["cmd.exe", "/c", runner], shell=False,
+                                        creationflags=_NO_WINDOW, **popen_kw)
             logf.close()
         except Exception:
             try:
@@ -974,6 +987,21 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     the surviving PID list is returned and the registry entry is retained so
     the caller can report the blocked stop and retry safely.
     """
+    # Deck-launched job: the kernel member list is the whole kill set (no
+    # tokens, no BFS, no revalidation). Never-seed names are excluded.
+    if jobs.eligible(work):
+        wid = work.get("id", "")
+        mine = {os.getpid()}
+        targets = [p for p in jobs.members(wid, _NEVER_SEED_GUI) if p not in mine]
+        if targets:
+            if dry_run:
+                return sorted(targets)
+            root = (_load_registry().get(wid) or {}).get("pid")
+            left = jobs.stop(wid, group=root, never=_NEVER_SEED_GUI, protected=mine)
+            if left:
+                return sorted(left)
+            unregister(work)
+            return None
     # Drop dangerously short tokens (1-2 chars match the whole machine --
     # e.g. a 1-letter work id). Killing is destructive: a tiny token can
     # never be what anyone wants. Detection (is_running) is unaffected.

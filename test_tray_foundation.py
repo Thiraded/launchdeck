@@ -6,6 +6,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 import launchdeck_core as core
+from deck.core import jobs as _jobs
+# Never open/kill a real deck job from a test (isolated namespace).
+_jobs.PREFIX = "Local\\launchdeck-test-%d-" % __import__("os").getpid()
 import launchdeck_tray
 
 

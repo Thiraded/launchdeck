@@ -40,7 +40,35 @@ relaxed.
 7. **No `WINDOWTITLE`**, no `Get-Process` (no CommandLine there) —
    `Get-CimInstance Win32_Process` (or `gowc scan`) only.
 
-## The three close passes (§4.9)
+## Job Objects (Phase 1, 2026-10-01) — `deck/core/jobs.py`
+
+A detached work whose steps are ALL `terminal` is launched suspended,
+assigned to the named job `Local\launchdeck-job-<id>`, then resumed.
+Every descendant is a job member, so for these works:
+
+- `is_running` = the job has a live counted member (conhost and
+  never-seed names are not counted). Token scan is the fallback only.
+- `kill_work` = CTRL_BREAK to the work's console group (sent from a
+  throwaway helper that attaches to the console), 5 s grace, then
+  per-PID `TerminateProcess`, each PID re-checked with `IsProcessInJob`
+  right before (no PID reuse). No tokens, no BFS, no revalidation scan.
+  `dry_run` returns the member list.
+- Never-seed names (rule 5) are never counted and never killed, even
+  as members: `npx` tools can open a browser, and a browser that was not
+  running yet is born INSIDE the job.
+- `app` steps (Unity Hub, VSCode, Brave `.lnk`) are NOT jobbed: GUI
+  handoff can pull the user's app into the job. They stay on the legacy
+  passes below.
+- No `KILL_ON_JOB_CLOSE`: works outlive the deck. A job's name dies with
+  its last handle even while members run, so a handle copy is planted in
+  the root child; a restarted deck reopens the job by name.
+- Store Python (WindowsApps) relaunches through package activation and
+  escapes the job. Works run node/npm, which stay inside; don't write a
+  jobs test around `sys.executable`.
+- Works started before this change (or by hand) have no job: they use
+  the legacy path until their next Start from the deck.
+
+## The three close passes (§4.9) — legacy (non-job works)
 
 Over the SAME downward-only set: (1) graceful `taskkill /PID` (no `/F`,
 console close request); (2) Alt+F4 `WM_CLOSE` to HWNDs owned by the same

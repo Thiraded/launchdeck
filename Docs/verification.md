@@ -24,6 +24,16 @@
   running.** The harness spawns real `cmd` trees with the same shape
   as production launches; a kill step can sweep user processes
   (2026-08-30: appeared to kill the live `omniroute` CLI).
+- `test_jobs.py` (opt-in: `LAUNCHDECK_SPAWN_TESTS=1`) spawns only its own
+  node children, inside jobs in a per-run namespace
+  (`Local\launchdeck-test-<pid>-*`), and kills only by job membership
+  re-checked with `IsProcessInJob`, so no token match exists that could
+  reach a user process. PROPOSED (needs the user's sign-off): allowed while
+  live works run. Until they sign off, the rule above applies to it too.
+  It was run once on 2026-10-01 with live works running; afterwards every
+  user node process was still alive.
+- Unit tests rebind `jobs.PREFIX` to that per-run namespace, so a mocked
+  test never opens a real work's job.
 - Prefer `dry_run` (read-only PID lists) + synthetic scratch PIDs you
   own (hidden `ping`/`ping -n`, exact PID, verify death, then
   idempotency on the dead PID).

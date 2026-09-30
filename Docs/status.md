@@ -1,5 +1,15 @@
 # Status — current state and open gates (2026-09-06 evening)
 
+## 2026-10-01 — Job Objects (pending live check)
+
+- Detached all-terminal works (hamster-*, hamsterquest, hamstermap,
+  omniroute-cli, gpt-mcp) now start inside a named Job Object; Stop is
+  CTRL_BREAK + job-member kill (`Docs/kill-safety.md` "Job Objects").
+  Proven by `test_jobs.py` (own node children only). NOT yet proven on a
+  real work: the next Start of each work from the NEW deck is its first
+  jobbed launch. Works already running were started the old way and keep
+  the legacy Stop until restarted.
+
 ## 2026-09-30 — pending live check
 
 - Dashboard moved to `deck/ui/` and redesigned with SVG icons + DPI
