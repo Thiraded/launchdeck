@@ -35,10 +35,10 @@ relaxed.
    msedge, firefox, opera, vivaldi, arc, explorer, discord, slack,
    teams. A token can match a browser tab URL or chat content
    (proven: `omniroute` seeded Brave PID 4524 via tab URL).
-6. **No `/T`, ever.** Per-PID `taskkill /F` (or one `gowc kill` call).
+6. **No `/T`, ever.** Per-PID `taskkill /F` (or one `launchdeck-helper kill` call).
    Tree-kill cascades into shared conhosts of unrelated windows.
 7. **No `WINDOWTITLE`**, no `Get-Process` (no CommandLine there) —
-   `Get-CimInstance Win32_Process` (or `gowc scan`) only.
+   `Get-CimInstance Win32_Process` (or `launchdeck-helper scan`) only.
 
 ## Job Objects (Phase 1, 2026-10-01) — `deck/core/jobs.py`
 
@@ -75,7 +75,7 @@ console close request); (2) Alt+F4 `WM_CLOSE` to HWNDs owned by the same
 downward set and its console-host children; the kill path does not walk
 back into a user's hosting shell; (3) after a bounded 2.5s wait, revalidate
 the runner and unchanged descendants, then run the per-PID `/F` sweep
-(`gowc kill` when present; gone PIDs report and are ignored). A final scan
+(`launchdeck-helper kill` when present; gone PIDs report and are ignored). A final scan
 must confirm all target PIDs are gone before
 `unregister`; otherwise the registry is retained and the UI reports a
 blocked stop.

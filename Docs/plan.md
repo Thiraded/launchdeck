@@ -1,5 +1,10 @@
 # Plan — งานที่เหลือทั้งหมด + ความรู้ที่ session ใหม่ต้องมี
 
+> อัปเดต 2026-10-02: มี UI เดียว คำสั่ง `launchdeck` เปิด Dashboard และยกเลิก
+> หน้าจอ terminal เดิมแล้ว เนื้อหา handoff เดิมด้านล่างคงไว้เฉพาะส่วนที่ยังมีผล
+> งานที่กำลังรันยังถือพาธ runtime เก่าไว้จนกว่าจะหยุดตามปกติ ดู `Docs/status.md`
+> ก่อนย้ายไฟล์ runtime
+>
 > เขียน 2026-10-01 ตอนจบ session ที่ทำ Phase 0 → Phase 1 (Job Object) + แยก core
 > เป้าหมาย: เปิด session ใหม่แล้วอ่านไฟล์นี้ไฟล์เดียว (+ `AGENTS.md`) ก็รู้เท่ากับ
 > session เดิม ว่าอะไรทำแล้ว อะไรยังไม่ได้พิสูจน์ อะไรคือกับดัก และต้องทำอะไรต่อ
@@ -10,7 +15,7 @@
 1. อ่าน `AGENTS.md` (index + กฎเหล็ก) → `Docs/status.md` → ไฟล์นี้
 2. `git log --oneline -10` ต้องเห็น commit ตามหัวข้อ 3 ถ้ามี commit ใหม่กว่า
    ให้อ่าน diff ก่อนเชื่อไฟล์นี้
-3. `git status` ต้อง clean (`works.json`, `registry.json`, `wc_logs/` ถูก gitignore
+3. `git status` ต้อง clean (`works.json`, `registry.json`, `launchdeck_logs/` ถูก gitignore
    เป็นของเครื่อง user ห้าม commit)
 4. ถามตัวเองก่อนแตะเครื่องจริงทุกครั้ง: (1) PID/ชื่อ/path ที่โดน (2) เป็นของ user
    ได้ไหม (3) มั่นใจแค่ไหนว่าโดนแค่เป้าหมาย ไม่ชัวร์ = หยุดแล้วถาม
@@ -19,19 +24,18 @@
 
 ## 1. โปรเจกต์นี้คืออะไร และ user ต้องการอะไร
 
-- launchdeck (ชื่อเก่า Work Combo / wc) = ตัวเปิด/ปิด dev server และแอปของ user
-  บน Windows ขับด้วย `works.json` (groups + works) repo อยู่ที่ `D:\launchdeck`
-  (บาง Docs ยังเขียน `D:\workcombo` = ชื่อเก่า) remote `Thiraded/launchdeck@main`
-- frontend 2 ตัว: `launchdeck.py` (console TUI: Space เลือก, Enter kill/launch)
-  และ dashboard ใน tray (`launchdeck_dashboard.py` → `deck/ui/`, รันด้วย pythonw
-  ผ่าน `launchdeck-tray.bat`, hotkey Alt+W)
+- LaunchDeck = ตัวเปิด/ปิด dev server และแอปของ user บน Windows ขับด้วย
+  `works.json` (groups + works) repo อยู่ที่ `D:\launchdeck`, remote
+  `Thiraded/launchdeck@main`
+- มี UI เดียว: คำสั่ง `launchdeck` เรียก `launchdeck.bat` ซึ่งเปิด dashboard
+  (`launchdeck_dashboard.py` → `deck/ui/`, รันด้วย pythonw, hotkey Alt+W)
 - ทุก work รันแบบ `"run": "detached"` = ไม่มีหน้าต่าง output ลง
-  `wc_logs/<id>.log` แล้ว log viewer ใน dashboard tail สีให้
+  `launchdeck_logs/<id>.log` แล้ว log viewer ใน dashboard tail สีให้
 - user: พูดไทย เป็นเจ้าของเครื่อง ใช้งานจริงทุกวัน (work รันค้างอยู่ตลอด)
   ขอให้ review หาจุดผิดออกแบบ แล้วให้ "ทำให้สมบูรณ์และเร็วขึ้นมาก" ให้อำนาจรื้อ
   สถาปัตยกรรมได้ ขอ UI สวยด้วย SVG แทนตัวอักษร และขอแยกไฟล์ลด god class
 - ข้อจำกัดถาวร (`Docs/requirements.md`): stdlib only (ห้าม Pillow/pywin32/psutil),
-  UI เป็น tree คอลัมน์เดียว ห้ามสองแพน, gowc.exe เป็นตัวเร่งแบบ optional เท่านั้น
+  UI เป็น tree คอลัมน์เดียว ห้ามสองแพน, launchdeck-helper.exe เป็นตัวเร่งแบบ optional เท่านั้น
 
 ## 2. กฎที่ห้ามละเมิด (สรุป อ่านตัวเต็มใน Docs)
 
@@ -52,16 +56,16 @@
 
 | commit | เรื่อง |
 |--------|--------|
-| `d505de7` | Phase 0: named mutex แทน election (uv-venv twin), atomic registry/manifest + lock, MAX_LAUNCHES→burst 5/60s, guard `find_work_hwnds`, scan_available เป็น thread-local, scan ครั้งเดียวต่อการตัดสินใจ, tray menu async, .bat escape/`cd` guard/chcp, gowc 1.1.0 |
+| `d505de7` | Phase 0: named mutex แทน election (uv-venv twin), atomic registry/manifest + lock, MAX_LAUNCHES→burst 5/60s, guard `find_work_hwnds`, scan_available เป็น thread-local, scan ครั้งเดียวต่อการตัดสินใจ, tray menu async, .bat escape/`cd` guard/chcp, launchdeck-helper 1.1.0 |
 | `7f35439` | แยก `launchdeck_dashboard.py` (2,520 บรรทัด) → `deck/ui/*` + ตัว render SVG แบบ stdlib |
 | `7357009` | Redesign: ไอคอน SVG ทุกปุ่ม, DPI awareness, ปุ่ม hover-ghost/danger/accent |
 | `fe9ee32` | แก้ Start รายตัวพัง (local `state` ชื่อชน module) + ไอคอนของ work จริง |
 | `a1b5273` | Phase 1: work ที่ step เป็น terminal ล้วนรันใน Job Object |
-| `7ed61b3` | ลบ hide/show/park/sweep + ปุ่ม `h` ใน TUI |
+| `7ed61b3` | ลบ hide/show/park/sweep + ปุ่ม `h` ก่อนยกเลิกหน้าจอ terminal |
 | `c936668` | แยก `launchdeck_core.py` (2,200) → facade 90 บรรทัด + `deck/core/*` |
 
 ของที่แก้นอก git: `works.json` เปลี่ยนแค่ field `icon` (สำรอง
-`wc_logs/works.json.bak-icons`) และ memory ที่
+`launchdeck_logs/works.json.bak-icons`) และ memory ที่
 `C:\Users\thira\.claude\projects\D--launchdeck\memory\`
 
 ## 4. สภาพโค้ดตอนนี้ (แผนที่)
@@ -73,13 +77,13 @@
 | `common.py` | 12 | `HERE` (repo root = `parents[2]`), `_NO_WINDOW` |
 | `manifest.py` | 120 | load/save works.json, settings, hotkey parse, slug group |
 | `store.py` | 127 | registry.json, `_atomic_write_text`, `_StateMutex` (`Local\launchdeck-state`) |
-| `steps.py` | 221 | steps/vars → `wc_logs/launchdeck-gen-<id>.bat`, log path, editor text |
+| `steps.py` | 221 | steps/vars → `launchdeck_logs/launchdeck-gen-<id>.bat`, log path, editor text |
 | `ansi.py` | 53 | SGR → (text, color) สำหรับ log viewer |
-| `detect.py` | 370 | scan_table (gowc หรือ powershell), token, `is_running` (ถาม job ก่อน) |
+| `detect.py` | 370 | scan_table (launchdeck-helper หรือ powershell), token, `is_running` (ถาม job ก่อน) |
 | `jobs.py` | 274 | Job Object: spawn/members/stop/ctrl_break |
 | `kill.py` | 475 | `kill_work`: job ก่อน, ไม่ใช่ job ใช้ legacy 3 pass |
 | `windows.py` | 298 | หา/ปิดหน้าต่าง (Alt+F4 pass ของ legacy) |
-| `model.py` | 150 | Node/tree + state machine ของ TUI |
+| `model.py` | 150 | Node/tree + selection state helpers |
 | `launch.py` | 195 | `run_work`, `launch_work` (burst cap), `poll_launch` |
 
 กลไก facade: `core.X` อ่าน/เขียนถูกส่งต่อไป module ที่เป็นเจ้าของ `X`
@@ -125,10 +129,9 @@ rotate-cw file-text chevron-down/right/up x settings plus folder-plus zap ...
 
 ### 4.3 อื่นๆ
 
-- `launchdeck.py` (395): TUI, monitor thread 2s ของตัวเอง (scan ซ้ำกับ deck)
 - `launchdeck_tray.py` (1,009): primitive tray/hotkey ด้วย ctypes (reference)
   `register_hotkey` marshal ไป tray thread ด้วย SendMessageTimeout 2s
-- `gowc/` + `gowc.exe` 1.1.0: `scan` (exit 1 เมื่อ snapshot พัง), `kill`
+- `launchdeck-helper/` + `launchdeck-helper.exe` 1.1.0: `scan` (exit 1 เมื่อ snapshot พัง), `kill`
   (`dead`/`denied` แยกกัน)
 - `test_*.py`: kill_safety (~33), tray_foundation (~10), ui_smoke (~9),
   jobs (4, opt-in), launchdeck_core (spawn จริง, ห้ามรันถ้าไม่ได้รับอนุญาต)
@@ -178,7 +181,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
    generator expression ยังมี scope ของตัวเอง, default arg/lambda default
    ประเมินใน scope นอก ทำให้ symtable scan ต้องจัดการเอง
 8. **cp1252 console** print ไทย/emoji พัง ใช้ `PYTHONIOENCODING=utf-8`
-9. **test เขียนไฟล์ลง `wc_logs/` จริง** เคยเกิดตอน patch `os.path.abspath` ไม่มีผล
+9. **test เขียนไฟล์ลง `launchdeck_logs/` จริง** เคยเกิดตอน patch `os.path.abspath` ไม่มีผล
    แล้ว ตอนนี้ test ใช้ `mock.patch.object(core, "HERE", tmp)` ตรวจหลังรัน test
    เสมอว่าไม่มีไฟล์ `zz-*`, `launchdeck-gen-inj/same/th.bat` ค้าง
 10. **teardown ลบ log ไม่ได้** เพราะ child ที่เพิ่งถูกฆ่ายังถือ handle → retry loop
@@ -199,7 +202,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
 
 - [ ] L1 user Quit deck ตัวเก่าจากเมนู tray (ห้ามใช้ Restart ของตัวเก่า: ตัวเก่า
       อาจยังเป็นยุค port-lock ส่วนตัวใหม่ใช้ mutex สองตัวมองไม่เห็นกัน) แล้วเปิด
-      `launchdeck-tray.bat` ตรวจ `wc_logs/launchdeck-tray.log` ว่ามี "deck ready"
+      `launchdeck.bat` ตรวจ `launchdeck_logs/launchdeck-tray.log` ว่ามี "deck ready"
 - [ ] L2 Alt+W เปิด/ปิด dashboard ได้ (ครั้งแรกหลังเปิด DPI awareness)
 - [ ] L3 หน้าตา: ที่ 100% แล้วลอง 125/150% (Settings > Display) ไอคอนคม ไม่ล้น
 - [ ] L4 Start ทีละตัวจาก dashboard (bug `state` ที่แก้ใน `fe9ee32`) และ Start all
@@ -217,7 +220,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
       และ Brave ยังไม่ได้เปิดอยู่ก่อน ให้เช็คว่า Stop ไม่ปิด Brave)
 - [ ] L9 work แบบ app (mr-unity, mr-vscode, omniroute-web) ยังใช้ legacy: Start/Stop
       ได้เหมือนเดิม Stop ของ omniroute-web ต้องไม่ปิด Brave ของ user
-- [ ] L10 console TUI `launchdeck.bat`: Space → `[X]`, Enter kill/launch, ไม่มีปุ่ม h แล้ว
+- [x] L10 หน้าจอ terminal ถูกยกเลิก 2026-10-02; `launchdeck` เปิด dashboard UI เท่านั้น
 - [ ] L11 bump ผลลง `Docs/status.md` (ย้ายจาก "pending live check" เป็น "Verified")
 
 ถ้า L5 ได้รายการ PID ที่มีชื่อแปลก (ไม่ใช่ cmd/conhost/node/esbuild) → หยุด
@@ -240,14 +243,13 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
 | B9 | detect หลวม vs kill เข้ม (HammonQuest VSCode, Midnight-Rider ร่วม path) | **ยังไม่แก้** → งาน M1-M3 |
 | B10 | .bat เปราะ | แก้บางส่วน (escape, cd guard, chcp, ไม่เขียนทับ) เหลือ: ใช้ .bat ทั้งหมด → P4 |
 | B11 | log/poll | **ยังไม่แก้**: viewer `readlines()` ทั้งไฟล์บน Tk thread, `_read_log` อ่านทั้งไฟล์, `_scan_error` จับ "error:" ทั้งไฟล์, STABLE_MAX เป็น dead code → งาน G1-G4 |
-| B12 | gowc | แก้แล้ว 1.1.0 (ACCESS_DENIED = denied) เหลือ PEB race cmdline ว่าง → R3 |
+| B12 | launchdeck-helper | แก้แล้ว 1.1.0 (ACCESS_DENIED = denied) เหลือ PEB race cmdline ว่าง → R3 |
 
 จุดอ่อนใหม่ที่รู้แล้วแต่ยังไม่ทำ:
 - N1 `monitor_loop` ยัง scan process ทั้งเครื่องทุก 3s แม้ทุก work เป็น job
-  (scan ใช้ gowc ~0.2s หรือ powershell ~0.9s) → J2
+  (scan ใช้ launchdeck-helper ~0.2s หรือ powershell ~0.9s) → J2
 - N2 `toggle_start_stop` บังคับ scan สำเร็จก่อน ถ้า scan พังจะกด Stop work ที่อยู่
   ใน job ไม่ได้ ทั้งที่ job ตอบได้เอง → J2
-- N3 TUI (`launchdeck.py`) มี monitor 2s ของตัวเอง scan ซ้ำกับ deck → S1-S4
 - N4 registry entry ของ work ที่ตายเองไม่ถูกลบ (เช่น hamster-server จาก 09-27) → J5
 - N5 `poll_launch`, `registry_running`, `live_running`, `STABLE_MAX_SECONDS`,
   `SETTLED` ไม่มีใครเรียกนอก core แล้ว (ตรวจ grep 2026-10-01) → D1
@@ -347,7 +349,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
 
 - [ ] M1 แยกสถานะ 3 แบบใน core: `managed` (มี job ของเรา), `external` (token
       match แต่ไม่มี job), `stopped` ให้ `detect.run_state(work, cls) -> str`
-      ส่วน `is_running` คงไว้ (= managed or external) เพื่อไม่ให้ TUI/test พัง
+      ส่วน `is_running` คงไว้ (= managed or external) เพื่อไม่ให้ core checks พัง
 - [ ] M2 UI: แถว external แสดงจุดสีอื่น (เช่นเหลือง/ขอบ) + ข้อความ "running
       (outside deck)" ปุ่มหลักเปลี่ยนเป็น "Stop…" ที่เปิด dialog โชว์ `dry_run`
       PID + ชื่อ + cmdline ก่อน kill (ตาม kill-safety ข้อ 4) และมีปุ่ม "Start anyway"
@@ -362,7 +364,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
 
 ### P2. Supervisor daemon + IPC (ใหญ่ ต้องถาม user ก่อน = Q3)
 
-แนวคิดจาก review: ให้มีเจ้าของ state คนเดียว (`launchdeckd`) ส่วน TUI/dashboard
+แนวคิดจาก review: ให้มีเจ้าของ state คนเดียว (`launchdeckd`) และให้ dashboard
 เป็น client บาง ไม่ scan เอง
 
 ```
@@ -374,16 +376,16 @@ launchdeckd (pythonw, mutex = ตัวเดียว)
  └─ IPC: multiprocessing.connection บน \\.\pipe\launchdeck (authkey)
 ```
 
-- ข้อดี: TUI กับ deck เห็นสถานะเดียวกันทันที, ไม่ scan ซ้ำ, event แทน poll
+- ข้อดี: dashboard เห็นสถานะจากเจ้าของ state เดียว, ไม่ scan ซ้ำ, event แทน poll
 - ข้อเสีย: เพิ่ม process + protocol, ต้อง upgrade path (deck เก่า/ใหม่), ต้อง
   ป้องกัน IPC: pipe name ใน `Local`/session เดียว + authkey สุ่มเก็บใน
   `%LOCALAPPDATA%` (อ่านได้เฉพาะ user) ห้ามเปิด TCP
-- ทางเลือกที่ถูกกว่า (แนะนำให้เสนอ user ก่อน): ให้ deck (tray) เป็น supervisor เลย
-  แล้ว TUI ถาม job/registry เอง (ทำได้อยู่แล้วเพราะ job มีชื่อ) = ได้ 80% โดยไม่ต้อง IPC
+- ทางเลือกที่ถูกกว่า (แนะนำให้เสนอ user ก่อน): ให้ dashboard เป็น supervisor เลย
+  (ทำได้อยู่แล้วเพราะ job มีชื่อ) = ได้ 80% โดยไม่ต้อง IPC
 - ขั้นถ้าทำ: P2.1 spike IPC (echo server/client, authkey, reconnect)
   P2.2 ย้าย `monitor_loop` + launch/kill ไปอยู่ใน supervisor object ใน process deck
-  (ยังไม่แยก process) P2.3 เปิด pipe server P2.4 TUI เป็น client (fallback เป็น
-  โหมดเดิมถ้าไม่มี daemon) P2.5 dashboard subscribe event แทน poll 3s
+  (ยังไม่แยก process) P2.3 เปิด pipe server P2.4 dashboard subscribe event
+  แทน poll 3s
 
 ### P3. LogPump
 
@@ -395,7 +397,7 @@ launchdeckd (pythonw, mutex = ตัวเดียว)
 
 ### P4. เลิกใช้ `.bat` ที่ generate
 
-- ตอนนี้: `steps.materialize_steps` เขียน `wc_logs/launchdeck-gen-<id>.bat` แล้ว
+- ตอนนี้: `steps.materialize_steps` เขียน `launchdeck_logs/launchdeck-gen-<id>.bat` แล้ว
   `cmd.exe /c <bat>` กับดักที่รู้: setlocal+npm goto (ห้ามใส่ setlocal), codepage,
   เขียนทับไฟล์ระหว่างรัน (แก้แล้วด้วยการไม่เขียนถ้าเหมือนเดิม), injection ทาง title
 - เป้าหมาย: `CreateProcess` ตรง cwd = ค่าจาก step `cd` แรก, env = `vars` ที่ expand
@@ -411,30 +413,30 @@ launchdeckd (pythonw, mutex = ตัวเดียว)
       work ที่ eligible ก่อน
 - [ ] P4.3 เก็บ .bat สำหรับ app steps (start "" ...) ไว้ก่อน หรือเปลี่ยนเป็น
       `os.startfile`/ShellExecute ใน deck ตรงๆ
-- [ ] P4.4 ลบไฟล์ `wc-gen-*.bat` เก่าใน `wc_logs/` (มีอยู่ ~13 ไฟล์ยุคชื่อ wc)
-      ต้องโชว์รายชื่อ user ก่อนลบ (เป็นไฟล์ในเครื่อง user)
+- [x] P4.4 ย้าย runner เก่า 13 ไฟล์ไป `launchdeck_logs/archive/` โดยเก็บเนื้อหาไว้
+      และเปลี่ยนชื่อเป็น `legacy-runner-<id>.bat` แล้ว 2026-10-02
 
 ### P5. ลด legacy (หลังทุก work ที่เป็น terminal อยู่ใน job และ L ผ่านแล้ว)
 
-- [ ] P5.1 วัดก่อน: หลังใช้งานจริง 1-2 สัปดาห์ ดู `wc_logs` deck log ว่ามี Stop
+- [ ] P5.1 วัดก่อน: หลังใช้งานจริง 1-2 สัปดาห์ ดู `launchdeck_logs` deck log ว่ามี Stop
       ผ่าน legacy กี่ครั้งและเป็น work ไหน (เพิ่ม log บรรทัด "stop via job/legacy")
 - [ ] P5.2 legacy 3 pass (`kill.kill_work` ส่วนล่าง ~300 บรรทัด) ยังจำเป็นสำหรับ
       app works (Q4) และ work ที่รันเองนอก deck ห้ามลบจนกว่า Q4 จะได้คำตอบ
 - [ ] P5.3 ถ้า Q4 = "external แสดงอย่างเดียว + kill ต้องยืนยัน" → ย่อ legacy ให้
       เหลือ: dry_run → dialog → per-PID TerminateProcess (ctypes) ตัด taskkill
       graceful pass + sleep 2.5 + WM_CLOSE pass ออก แล้ว `windows.py` ส่วนใหญ่ลบได้
-- [ ] P5.4 gowc: ถ้า scan เหลือแค่สำหรับ external (10-15s) และ kill ใช้ ctypes →
+- [ ] P5.4 launchdeck-helper: ถ้า scan เหลือแค่สำหรับ external (10-15s) และ kill ใช้ ctypes →
       เขียน `CreateToolhelp32Snapshot` + อ่าน cmdline ด้วย
       `NtQueryInformationProcess(ProcessCommandLineInformation=60)` ใน Python
-      แล้ว gowc เป็นแค่ optional ต่อไป หรือเลิกใช้ (ต้องถาม user เพราะเขาสร้างไว้เอง)
+      แล้ว launchdeck-helper เป็นแค่ optional ต่อไป หรือเลิกใช้ (ต้องถาม user เพราะเขาสร้างไว้เอง)
 - [ ] P5.5 อัปเดต `Docs/kill-safety.md` ให้ legacy เป็นหัวข้อรอง
 
 ### R. ความถูกต้องเล็กๆ ที่เหลือ
 
-- [ ] R1 `launch_work` burst cap นับเฉพาะใน process เดียว TUI + deck รวมกันได้
+- [ ] R1 `launch_work` burst cap นับเฉพาะใน process เดียว (dashboard เป็น UI เดียว)
       10/นาที ยอมรับได้ (บันทึกไว้) ไม่ต้องแก้ถ้าไม่ทำ P2
 - [ ] R2 `_StateMutex` timeout 5s แล้วทำต่อโดยไม่มี mutex (เงียบ) ควร log
-- [ ] R3 gowc PEB race (cmdline ว่างตอน process เพิ่งเกิด) ทำให้สถานะกระพริบหลัง
+- [ ] R3 launchdeck-helper PEB race (cmdline ว่างตอน process เพิ่งเกิด) ทำให้สถานะกระพริบหลัง
       Start สำหรับ job works ไม่มีผลแล้ว (ไม่ใช้ cmdline) เหลือ legacy
 - [ ] R4 `steps._cmd_escape` ใช้กับ title เท่านั้น ตรวจว่า `vars` ที่มี `"` หรือ `%`
       ไม่ทำ `set "K=V"` พัง (มี test escape label แล้ว ยังไม่มีของ vars)
@@ -471,13 +473,6 @@ launchdeckd (pythonw, mutex = ตัวเดียว)
       ตาม AGENTS.md "spec-*.md history stays at root" จึงคงไว้ แค่เพิ่มหัวว่า superseded
 - [ ] D6 `test_launchdeck_core.py` ยังอ้าง API เก่าหรือไม่ (hide?) อ่านด้วยตาและ
       `python -m py_compile` เท่านั้น ห้ามรัน
-
-### S. Console TUI (`launchdeck.py`)
-
-- [ ] S1 monitor 2s ของ TUI: ใช้ job ก่อน (เหมือน J2) scan เฉพาะ legacy
-- [ ] S2 help/footer ตรวจว่าไม่มี `h` แล้ว (ทำแล้วใน `7ed61b3`) + ปุ่ม `l` ดู log?
-- [ ] S3 Enter บน work ที่ external (M1) ต้องถามยืนยันก่อน kill
-- [ ] S4 ถ้าทำ P2 TUI เป็น client
 
 ## 10. วิธีทดสอบ (ทำแบบนี้ทุกครั้ง)
 
@@ -536,7 +531,7 @@ print("self_test ->", self_test())
   ต้องมี node ติดตั้ง, 4 tests ใช้เวลา ~2s สถานะนโยบาย: ดู Q1 ก่อนรันทุกครั้ง
   หลังรันตรวจว่าไม่มี node ของ test ค้าง (read-only):
   `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ? { $_.CommandLine -match 'setInterval|grace.js|tree.js' }"`
-  และไม่มี `wc_logs\zz-jobtest-*`
+  และไม่มี `launchdeck_logs\zz-jobtest-*`
 - `test_launchdeck_core.py`: ห้ามรันถ้า user ไม่อนุญาตชัดเจน + ไม่มี work รัน
 
 ### 10.4 ตรวจหน้าตา (ไม่แตะหน้าจอ user)
@@ -573,7 +568,7 @@ python -c "import launchdeck_core as c; w=c.work_by_id(c.load_manifest(),'hamste
 type registry.json
 
 :: log ของ deck เอง
-type wc_logs\launchdeck-tray.log   (deck.ui.state.LOG)
+type launchdeck_logs\launchdeck-tray.log   (deck.ui.state.LOG)
 ```
 
 กฎ: `dry_run=True` เท่านั้นระหว่างสำรวจ, ห้าม `kill_work(w)` จริงนอกจาก user สั่ง
@@ -613,7 +608,7 @@ T7 KILL_ON_JOB_CLOSE ฆ่าจริง
 4. งานที่แตะ UI: ภาพ PrintWindow dark/light ดูด้วยตา
 5. Docs: อัปเดตไฟล์ที่เป็นเจ้าของเรื่อง (`kill-safety.md`, `architecture.md`,
    `tray.md`, `status.md`) + ติ๊กไฟล์นี้
-6. ไม่มีไฟล์ขยะใน repo/`wc_logs` (`git status` clean ยกเว้นที่ตั้งใจ)
+6. ไม่มีไฟล์ขยะใน repo/`launchdeck_logs` (`git status` clean ยกเว้นที่ตั้งใจ)
 7. commit แยกเรื่อง ข้อความบอกเหตุผล + วิธีพิสูจน์ ท้ายด้วย Co-Authored-By
 8. รายงาน user เป็นไทย: ผลก่อน, สิ่งที่ยังไม่ได้พิสูจน์บนเครื่องจริงบอกตรงๆ
 
@@ -624,9 +619,9 @@ T7 KILL_ON_JOB_CLOSE ฆ่าจริง
 - ห้ามขยาย detection token ให้หลวมขึ้นเพื่อแก้สถานะ
 - ห้ามเพิ่ม dependency นอก stdlib
 - ห้ามทำ UI สองแพน
-- ห้าม commit `works.json`, `registry.json`, `wc_logs/`
+- ห้าม commit `works.json`, `registry.json`, `launchdeck_logs/`
 - ห้ามแก้ `works.json` โดยไม่สำรองก่อน และแก้เฉพาะ field ที่ user ขอ
-- ห้ามลบไฟล์ในเครื่อง user (เช่น `wc-gen-*.bat` เก่า) โดยไม่โชว์รายชื่อก่อน
+- ไฟล์ใน `launchdeck_logs/archive/` เป็นข้อมูลเครื่อง user ให้เก็บไว้
 - ห้าม resurrect `kc` หรือระบบ hide
 
 

@@ -1,14 +1,14 @@
-# gowc — fast Win32 helper for the launchdeck suite
+# launchdeck-helper — fast Win32 helper for the launchdeck suite
 
 Stdlib-only Go (`syscall` + `unsafe`, no deps, no network to build).
-`launchdeck_core.py` uses `gowc.exe` when it sits next to it, otherwise falls back
+`launchdeck_core.py` uses `launchdeck-helper.exe` when it sits next to it, otherwise falls back
 to the powershell scans (same results, ~4x slower per spawn).
 
 ```
-cd gowc && go build -o ../gowc.exe .
+cd launchdeck-helper && go build -o ../launchdeck-helper.exe .
 ```
 
-Graduated from `spikes/002-gowc-scan` (VALIDATED: 0 content mismatches vs
+Graduated from `spikes/002-launchdeck-helper-scan` (VALIDATED: 0 content mismatches vs
 `Get-CimInstance` over ~285 procs; scan 200-350ms single-threaded).
 
 ## Protocol
@@ -18,4 +18,4 @@ Graduated from `spikes/002-gowc-scan` (VALIDATED: 0 content mismatches vs
   (exit 1 if the snapshot itself fails)
 - `kill <pid>..` -> `killed <pid>` / `dead <pid>` / `denied <pid>` per PID,
   exit 0 always
-- `version` -> `gowc 1.1.0`
+- `version` -> `launchdeck-helper 1.1.0`

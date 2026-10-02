@@ -12,9 +12,9 @@ REGISTRY = common.HERE / "registry.json"
 
 
 # --------------------------------------------------------------------------
-# registry  (so kc can list + kill running works quickly)
+# registry (for fast lookup of currently-running works)
 # --------------------------------------------------------------------------
-# State files are read-modify-written by the TUI, the dashboard, and several
+# State files are read-modify-written by the dashboard and several
 # worker threads. A truncating write_text let a concurrent reader see a
 # half-written file (-> {} -> written back, dropping every key), and two
 # writers lost each other's update. Writes now go to a temp file and are

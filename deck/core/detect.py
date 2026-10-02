@@ -7,18 +7,19 @@ import threading
 
 from deck.core import common, manifest as manifest_mod, store, steps, jobs
 
-# Optional speed helper (pure-stdlib Go, built from gowc/): when gowc.exe sits
-# next to this file, scans/kills go through it (~0.2s vs ~0.9s per spawn).
+# Optional speed helper (pure-stdlib Go, built from launchdeck-helper/): when
+# launchdeck-helper.exe sits next to this file, scans/kills go through it
+# (~0.2s vs ~0.9s per spawn).
 # Absent -> identical powershell fallbacks. Never a hard dependency.
-_GOWC = common.HERE / "gowc.exe"
+_LAUNCHDECK_HELPER = common.HERE / "launchdeck-helper.exe"
 # Per-thread: the monitor thread and action workers scan concurrently, and a
 # shared flag let one thread's `scan_available()` read another's result.
 _SCAN_STATE = threading.local()
 
 
-def _gowc_available() -> bool:
+def _launchdeck_helper_available() -> bool:
     try:
-        return os.path.isfile(_GOWC)
+        return os.path.isfile(_LAUNCHDECK_HELPER)
     except Exception:
         return False
 
@@ -231,11 +232,11 @@ def kill_tokens_for(work: dict) -> list[str]:
 
 def scan_table() -> list[tuple[int, int, str, str]]:
     """Full process table as (pid, ppid, name, cmdline) rows -- the ONE data
-    source every consumer shares. gowc.exe scan when present (~0.2s), else
-    ONE powershell dump (~0.9s). Previously each consumer spawned its own
+    source every consumer shares. launchdeck-helper.exe scan when present
+    (~0.2s), else ONE powershell dump (~0.9s). Previously each consumer spawned its own
     scan (find_work_hwnds alone did 3 = ~2.7s). No rows are excluded here;
     each consumer applies its own filters (powershell*, protected, ...)."""
-    rows = _scan_table_gowc()
+    rows = _scan_table_helper()
     # A successful-but-empty helper result is not a usable process table on a
     # live Windows machine.  Fall back so a scan failure cannot turn Stop into
     # Start or make a managed process look absent.
@@ -270,13 +271,13 @@ def _parse_table_rows(text: str) -> list[tuple[int, int, str, str]]:
     return out
 
 
-def _scan_table_gowc() -> list[tuple[int, int, str, str]] | None:
-    """Fast path via gowc.exe; None when unavailable or failed (fallback)."""
-    if not _gowc_available():
+def _scan_table_helper() -> list[tuple[int, int, str, str]] | None:
+    """Fast path via launchdeck-helper.exe; None when unavailable or failed."""
+    if not _launchdeck_helper_available():
         return None
     try:
         r = subprocess.run(
-            [str(_GOWC), "scan"],
+            [str(_LAUNCHDECK_HELPER), "scan"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             creationflags=common._NO_WINDOW,
         )
@@ -308,8 +309,8 @@ def _scan_table_ps() -> list[tuple[int, int, str, str]]:
 def scan_commandlines() -> list[str]:
     """Return the CommandLine of every live non-powershell process in ONE
     shared scan. Call this once and reuse the list for many is_running checks
-    instead of scanning per work (that's what made kc lag). Now a projection
-    over scan_table (gowc-accelerated when present)."""
+    instead of scanning per work, which avoids repeated system scans. Now a projection
+    over scan_table (helper-accelerated when present)."""
     me = os.getpid()
     return [cmd for (pid, _pp, name, cmd) in scan_table()
             if pid != me and cmd
@@ -338,8 +339,7 @@ def is_running(work: dict, commandlines: list[str] | None = None) -> bool:
 
 
 def registry_running() -> list[dict]:
-    """Return registry entries whose work is still alive. This is the list kc
-    uses to display and kill currently-running works. Scans processes once."""
+    """Return registry entries whose work is still alive. Scans once."""
     data = store._load_registry()
     out = []
     manifest = manifest_mod.load_manifest()
@@ -352,8 +352,8 @@ def registry_running() -> list[dict]:
 
 
 def live_running(manifest: dict | None = None, commandlines: list[str] | None = None) -> list[dict]:
-    """Return all works currently detected as running LIVE (not just what wc
-    registered). Used by kc to list + kill works you started by any means.
+    """Return all works currently detected as running LIVE (not just what
+    LaunchDeck registered). Used to list works started by any means.
     Pass a pre-scanned `commandlines` (from scan_commandlines) to do the whole
     scan in a single powershell call instead of one per work."""
     if manifest is None:

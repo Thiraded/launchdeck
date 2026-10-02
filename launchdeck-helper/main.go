@@ -1,12 +1,12 @@
-// gowc — fast Win32 helper for the work-combo suite (stdlib only).
+// launchdeck-helper — fast Win32 helper for the LaunchDeck suite (stdlib only).
 //
 // Commands:
 //
-//	gowc.exe scan          print pid|ppid|name|commandline lines (sorted by pid)
-//	gowc.exe kill <pid>..  TerminateProcess each PID; prints "killed <pid>",
+//	launchdeck-helper.exe scan          print pid|ppid|name|commandline lines (sorted by pid)
+//	launchdeck-helper.exe kill <pid>..  TerminateProcess each PID; prints "killed <pid>",
 //	                       "dead <pid>" (already gone) or "denied <pid>"
 //	                       (alive but not openable/terminable). Exit 0.
-//	gowc.exe version       print version.
+//	launchdeck-helper.exe version       print version.
 //
 // scan exits 1 when the process snapshot itself fails (the caller then falls
 // back to powershell instead of trusting an empty table).
@@ -27,7 +27,7 @@ import (
 	"unsafe"
 )
 
-const gowcVersion = "gowc 1.1.0"
+const launchdeckHelperVersion = "launchdeck-helper 1.1.0"
 
 var (
 	kernel32                   = syscall.NewLazyDLL("kernel32.dll")
@@ -171,7 +171,7 @@ func scan() int {
 	entries := snapshotEntries()
 	if len(entries) == 0 {
 		// A live Windows machine never has zero processes: the snapshot failed.
-		fmt.Fprintln(os.Stderr, "gowc: process snapshot failed")
+		fmt.Fprintln(os.Stderr, "launchdeck-helper: process snapshot failed")
 		return 1
 	}
 	jobs := make(chan processEntry32W, len(entries))
@@ -249,7 +249,7 @@ func kill(pids []string) int {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: gowc.exe scan|kill <pid>..|version")
+		fmt.Fprintln(os.Stderr, "usage: launchdeck-helper.exe scan|kill <pid>..|version")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -258,9 +258,9 @@ func main() {
 	case "kill":
 		os.Exit(kill(os.Args[2:]))
 	case "version":
-		fmt.Println(gowcVersion)
+		fmt.Println(launchdeckHelperVersion)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: gowc.exe scan|kill <pid>..|version")
+		fmt.Fprintln(os.Stderr, "usage: launchdeck-helper.exe scan|kill <pid>..|version")
 		os.Exit(2)
 	}
 }

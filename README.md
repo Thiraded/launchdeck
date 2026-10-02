@@ -34,24 +34,23 @@ deck shows what's actually alive right now, with a live log tail.
 - **Safe kill by construction.** Down-only traversal (matches +
   descendants), a protected launcher chain, dry-run preview. It cannot
   take your editor, browser, or chat apps with it.
-- **Optional Go accelerator** (`gowc/`) for sub-second scans on loaded
+- **Optional Go helper** (`launchdeck-helper/`) for sub-second scans on loaded
   machines; pure-Python fallback otherwise.
 
-Two frontends, one shared core (`launchdeck_core.py`, zero dependencies):
+One dashboard UI and one shared core (`launchdeck_core.py`, zero dependencies):
 
 | Entry | Role |
 |-------|------|
-| `launchdeck.bat` → `launchdeck.py` | Console TUI: Space select, Enter kill/launch |
-| `launchdeck-tray.bat` → `launchdeck_dashboard.py` | Tray + dashboard twin (no console window) |
+| `launchdeck` / `launchdeck.bat` → `launchdeck_dashboard.py` | Tray + dashboard UI; no console window |
 
 ## Requirements
 
 - Windows + Python 3 (stdlib only — nothing to `pip install`)
-- Optional: Go toolchain to rebuild `gowc.exe`
+- Optional: Go toolchain to rebuild `launchdeck-helper.exe`
 
 ## Quickstart
 
-1. Clone, open the dashboard (`launchdeck-tray.bat`) or console (`launchdeck.bat`).
+1. Run `launchdeck` or `launchdeck.bat`. The app opens the dashboard and tray icon.
 2. Add your works: dashboard editors (tasks / groups / settings) or edit
    `works.json` directly — one entry per work:
 
@@ -93,13 +92,13 @@ kill. Details: `Docs/kill-safety.md`.
 |------|------|
 | `works.json` | Manifest: `groups[]` + `works[]` (edit me) |
 | `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry. No UI |
-| `launchdeck.py` / `launchdeck_dashboard.py` | The two frontends |
+| `launchdeck_dashboard.py` | Dashboard UI entry point |
 | `launchdeck_tray.py` | Tray primitives (ctypes only) |
-| `gowc/` | Optional Go scan/kill accelerator (`go build -o ../gowc.exe .` inside) |
+| `launchdeck-helper/` | Optional Go scan/kill helper (`go build -o ../launchdeck-helper.exe .` inside) |
 | `assets/` | README screenshots |
 | `Docs/` | All knowledge: architecture, kill-safety, tray, verification |
 
-Runtime files (`registry.json`, `launchdeck.settings.txt`, `wc_logs/`,
+Runtime files (`registry.json`, `launchdeck.settings.txt`, `launchdeck_logs/`,
 `works.local.json`) are local-only and git-ignored — never committed.
 
 ## Branches

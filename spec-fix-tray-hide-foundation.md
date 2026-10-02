@@ -8,6 +8,10 @@ review_loop_iteration: 1
 context: ['AGENTS.md']
 ---
 
+> Superseded on 2026-10-02: the terminal frontend and console hide/restore
+> integration described here have been removed. Keep this file as historical
+> evidence for the old tray fix; current behavior is documented in `Docs/tray.md`.
+
 <frozen-after-approval reason="human-owned intent â€” do not modify unless human renegotiates">
 
 ## Intent
@@ -20,7 +24,9 @@ context: ['AGENTS.md']
 
 **Always:** Preserve unrelated working-tree changes. Keep work launches visible. Keep kill traversal downward-only and protected-process rules intact. Use exact, non-destructive tests that never kill or hide arbitrary user processes. Fail tray startup visibly in logs when Win32 initialization is incomplete.
 
-**Ask First:** Any change that terminates a currently running process, removes a launcher, migrates manifest entries, or changes the user-facing product from wctray to wc.
+**Historical ask-first rule:** any process termination, launcher removal,
+manifest migration, or product rename required approval at the time this spec
+was written. Current authorization comes from the user's 2026-10-02 request.
 
 **Never:** Run the existing live-process integration test unattended; use broad process termination; discard existing edits; touch the pending bat migration, registry data, or hermes launcher rename.
 
@@ -38,21 +44,21 @@ context: ['AGENTS.md']
 
 ## Code Map
 
-- `wc_tray.py` -- ctypes declarations, tray window, icon operations, and native message loop.
-- `wctray.py` -- dashboard, action dispatch, monitoring, and tray integration.
-- `wc_core.py` -- process discovery plus hidden HWND state and hide/show/sweep operations.
+- `launchdeck_tray.py` -- ctypes declarations, tray window, icon operations, and native message loop.
+- `launchdeck_dashboard.py` -- dashboard, action dispatch, monitoring, and tray integration.
+- `launchdeck_core.py` -- process discovery plus hidden HWND state and hide/show/sweep operations.
 - `test_tray_foundation.py` -- new non-destructive unit tests using fakes/mocks only.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `wc_tray.py` -- make prototype setup atomic and correct; add tray-thread shutdown message; make lifecycle cleanup idempotent.
-- [x] `wctray.py` -- remove the second queue consumer and keep one deterministic dispatcher; retain current dashboard behavior.
-- [x] `wc_core.py` -- lock hidden state, clear hide intent before restore, validate HWNDs, use SW_RESTORE, and confirm post-command visibility without treating ShowWindowAsync return as success.
+- [x] `launchdeck_tray.py` -- make prototype setup atomic and correct; add tray-thread shutdown message; make lifecycle cleanup idempotent.
+- [x] `launchdeck_dashboard.py` -- remove the second queue consumer and keep one deterministic dispatcher; retain current dashboard behavior.
+- [x] `launchdeck_core.py` -- lock hidden state, clear hide intent before restore, validate HWNDs, use SW_RESTORE, and confirm post-command visibility without treating ShowWindowAsync return as success.
 - [x] `test_tray_foundation.py` -- cover prototype initialization, shutdown routing, action dispatch, restore result semantics, invalid handles, and sweep/restore ordering without opening windows or killing processes.
 
 **Acceptance Criteria:**
-- Given a fresh import on 64-bit Windows, when TrayIcon initializes, then GetModuleHandleW and GetConsoleWindow have pointer-safe prototypes and no setup exception is swallowed.
+- The historical 64-bit tray setup had pointer-safe native handle prototypes and surfaced initialization failures.
 - Given a live tray message loop, when the UI requests shutdown, then destruction runs on the tray thread and the worker exits without an access violation.
 - Given one queued action, when the Tk dispatcher polls, then exactly one handler executes it.
 - Given a work being restored while the monitor sweeps, when restore begins, then the sweep cannot re-hide that work.
@@ -70,41 +76,41 @@ The tray window is thread-affine: the thread that creates it must also process i
 ## Verification
 
 **Commands:**
-- `python -m py_compile wc_core.py wc_tray.py wctray.py test_tray_foundation.py` -- expected: no syntax errors.
+- `python -m py_compile launchdeck_core.py launchdeck_tray.py launchdeck_dashboard.py test_tray_foundation.py` -- expected: no syntax errors.
 - `python -m unittest -v test_tray_foundation.py` -- expected: all tests pass without creating a tray icon, opening a work terminal, hiding a real window, or terminating a process.
 - `git diff --check` -- expected: no whitespace errors.
 
 **Manual checks:**
-- Start wctray once, hide and show one controlled Hamster work, quit, and repeat; expect one icon, one process owner, restored visible window, and no new access-violation log.
+- Historical live smoke opened the old dashboard, hid and showed one controlled work, then repeated; expected one icon, one process owner, and no new access-violation log.
 
 ## Suggested Review Order
 
 **Reliable hide and restore state**
 
 - Start with serialized, owner-validated hide state and confirmed visibility transitions.
-  [`wc_core.py:598`](wc_core.py#L598)
+  [`launchdeck_core.py`](launchdeck_core.py)
 
 - Restore clears intent first and retains only windows still hidden.
-  [`wc_core.py:633`](wc_core.py#L633)
+  [`launchdeck_core.py`](launchdeck_core.py)
 
 - Sweeps share each work lock so they cannot race a user restore.
-  [`wc_core.py:681`](wc_core.py#L681)
+  [`launchdeck_core.py`](launchdeck_core.py)
 
 **Native tray lifecycle**
 
 - Explorer rebuilds now keep availability truthful and recreate parked icons.
-  [`wc_tray.py:464`](wc_tray.py#L464)
+  [`launchdeck_tray.py`](launchdeck_tray.py)
 
 - Shutdown is posted to the owner thread and reports timeout failures.
-  [`wc_tray.py:662`](wc_tray.py#L662)
+  [`launchdeck_tray.py`](launchdeck_tray.py)
 
 - Secondary icon registration cleans both shell and GDI resources on failure.
-  [`wc_tray.py:740`](wc_tray.py#L740)
+  [`launchdeck_tray.py`](launchdeck_tray.py)
 
 **Single action path and regression coverage**
 
 - One Tk dispatcher isolates failed actions while continuing and rescheduling.
-  [`wctray.py:578`](wctray.py#L578)
+  [`launchdeck_dashboard.py`](launchdeck_dashboard.py)
 
 - Mock-only tests cover lifecycle, handle reuse, cleanup, and queue failures.
   [`test_tray_foundation.py:33`](test_tray_foundation.py#L33)

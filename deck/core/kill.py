@@ -276,7 +276,7 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     toks = [t for t in detect.kill_tokens_for(work) if len(t) >= 3]
     if not toks:
         return []
-    my_pid = os.getpid()  # the python (wc) process -- never touch
+    my_pid = os.getpid()  # the LaunchDeck process -- never touch
     # Seeds + DOWN expansion computed in pure Python over ONE shared table
     # (no per-kill PowerShell scan; Trap: NEVER use $pid as a loop variable
     # applied to the old inline script -- gone with it).
@@ -437,15 +437,15 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
     if not revalidated:
         return sorted(set(pids))
 
-    # Pass 3 (sweep): kill stragglers -- ONE gowc call when available
+    # Pass 3 (sweep): kill stragglers -- ONE helper call when available
     # (in-process TerminateProcess; already-gone PIDs report "dead" and are
     # ignored), else the per-PID taskkill /F loop. No /T ever: tree-kill
     # cascades into shared conhost processes of unrelated windows.
     swept = False
-    if detect._gowc_available():
+    if detect._launchdeck_helper_available():
         try:
             r = subprocess.run(
-                [str(detect._GOWC), "kill"] + [str(k) for k in pids],
+                [str(detect._LAUNCHDECK_HELPER), "kill"] + [str(k) for k in pids],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 creationflags=common._NO_WINDOW,
             )
@@ -456,7 +456,7 @@ def kill_work(work: dict, dry_run: bool = False) -> list[int] | None:
         for kpid in pids:
             _tk(["/F", "/PID", str(kpid)], 10)
 
-    # Do not claim success merely because taskkill/gowc returned.  Both can
+    # Do not claim success merely because taskkill/helper returned. Both can
     # report success for a stale PID, and a permissions or protected-process
     # failure is otherwise silent.  A second scan is still read-only; if it
     # fails, retain the registry and report the targets as unresolved.

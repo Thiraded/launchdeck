@@ -1,7 +1,7 @@
-# gowc.exe — Go scan/kill accelerator
+# launchdeck-helper.exe — Go scan/kill accelerator
 
 Pure-stdlib Go (`syscall` + `unsafe`, no deps, no network to build).
-`launchdeck_core.py` uses `gowc.exe` when it sits next to it, else IDENTICAL
+`launchdeck_core.py` uses `launchdeck-helper.exe` when it sits next to it, else IDENTICAL
 powershell fallbacks — never a hard dependency.
 
 ## Protocol
@@ -14,13 +14,13 @@ powershell fallbacks — never a hard dependency.
   (alive, not terminable -- was misreported as `dead` before 1.1.0) per
   PID, exit 0 always (in-process `TerminateProcess`; a stale PID never
   fails the sweep; core confirms with a re-scan).
-- `version` -> version string (`gowc 1.1.0`).
+- `version` -> version string (`launchdeck-helper 1.1.0`).
 
 ## Numbers (live, ~275 procs)
 
 `scan_table` 0.85s -> 0.07s, kill dry_run 0.83s -> 0.06s,
 `find_work_hwnds` (was 3 spawns) 2.67s -> 0.07s. Pass-3 sweep uses one
-`gowc kill` call instead of N taskkill spawns; pass 1 stays
+`launchdeck-helper kill` call instead of N taskkill spawns; pass 1 stays
 taskkill-no-`/F` (graceful console-close has no Go equivalent, and
 `GenerateConsoleCtrlEvent`/CTRL_C only breaks to prompt anyway).
 
@@ -37,8 +37,8 @@ it. <100ms needs deeper fan-out tuning (currently ~170ms) — optional.
 ## Rebuild & ship
 
 ```
-cd gowc && go build -o ../gowc.exe .
+cd launchdeck-helper && go build -o ../launchdeck-helper.exe .
 ```
 
 Commit the exe (~2.5MB) so it works without the toolchain.
-`gowc/README.md` holds the short form of this page.
+`launchdeck-helper/README.md` holds the short form of this page.

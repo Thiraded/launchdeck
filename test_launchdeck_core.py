@@ -35,9 +35,9 @@ def make_fake_manifest():
             {"id": "grp", "label": "Hamster combo", "members": ["a", "b", "c"]}
         ],
         "works": [
-            {"id": "a", "label": "A start", "match": "wc-core-test-A", "bat": "a.bat", "detect": True},
-            {"id": "b", "label": "B start", "match": "wc-core-test-B", "bat": "b.bat", "detect": True},
-            {"id": "c", "label": "C start", "match": "wc-core-test-C", "bat": "c.bat", "detect": True},
+            {"id": "a", "label": "A start", "match": "launchdeck-core-test-A", "bat": "a.bat", "detect": True},
+            {"id": "b", "label": "B start", "match": "launchdeck-core-test-B", "bat": "b.bat", "detect": True},
+            {"id": "c", "label": "C start", "match": "launchdeck-core-test-C", "bat": "c.bat", "detect": True},
         ],
     }
 
@@ -66,8 +66,8 @@ def main():
 
     fa = os.path.join(HERE, "flag_a.tmp")
     fb = os.path.join(HERE, "flag_b.tmp")
-    spawn_fake_worker("wc-core-test-A", fa)
-    spawn_fake_worker("wc-core-test-B", fb)
+    spawn_fake_worker("launchdeck-core-test-A", fa)
+    spawn_fake_worker("launchdeck-core-test-B", fb)
     time.sleep(3.0)
 
     states = {n.key: (core.RUN if n.is_running() else core.OFF) for n in expand(model)}

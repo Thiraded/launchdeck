@@ -1,93 +1,52 @@
-# History — moves, renames, incidents
+# History — repository moves, renames, incidents
 
-## Home: Desktop -> `D:\WorkCombo` (2026-09-05)
+## 2026-10-02 — one UI and LaunchDeck commands
 
-The suite lived in `C:\Users\thira\OneDrive\Desktop` (a git repo pushing
-to `Thiraded/Desktop`), mixed with unrelated files. Moved to
-`D:\workcombo`: 30 files + `wc_logs/`, paths repointed (`wc_core.py`
-now resolves next to itself with Desktop as legacy fallback),
-`registry.json` / `works.json` / track-bats rewritten, `%~dp0` launchers
-unchanged. Desktop keeps only the `wc.lnk` shortcut; `%LOCALAPPDATA%\
-wc-bin` holds `wc` / `wctray` / `hermess` shims pointing at `D:`.
-`hermess.bat` moved into the project (its shim updated); the 3 Hermes
-config `.lnk`s stay on the Desktop by explicit order.
+The `launchdeck` command, Desktop shortcut, and Startup shortcut now open the
+tray dashboard. The console frontend and its separate launch command were
+removed. The user command folder and isolated VS Code profiles were moved to
+LaunchDeck-named paths. Existing work processes keep their original runner,
+log, registry, and helper paths until they stop naturally; see `status.md`.
 
-## Rename: `Thiraded/Desktop` -> `Thiraded/WorkCombo` (2026-09-05/06)
+## Repository move — 2026-09-05
 
-The GitHub repo was renamed; old URLs redirect. `D:` tracks
-`Thiraded/WorkCombo@main`. Push history: `707be4d` (squashed snapshot
-of the moved+evolved tree), then merge `9c77ea3` joining the pre-move
-history (`-s ours`: tree stays current). The `archive/pre-move` branch was
-dropped in the public cleanup (2026-09-06); old commits survive by hash
-(`3d31430`). The local Desktop repo keeps the move commit
-(`31a3ee0`) but must NOT push (its origin redirects to WorkCombo and
-would collide — leave it local).
+The suite moved out of the Desktop repository into `D:\launchdeck`, separating
+project files from unrelated Desktop items. Paths and launch shims were
+repointed, and the repository now uses `Thiraded/launchdeck@main`.
 
-## The 23:54 revert (2026-09-05)
+## Product rename — 2026-09-06
 
-`D:` was bulk-overwritten with the pre-move tree (old paths, old bats,
-foreign `.git` at `3d31430`) minutes after verification passed — almost
-certainly from wiring up the freshly-renamed remote URL into `D:` in
-the wrong direction. Recovered by: deleting the foreign `.git`,
-re-applying every change from session history (`wc_core.py` + `gowc/`
-had survived), re-verifying parity. Lesson: check `git log` +
-filenames/mtimes (`hermess.bat` appearing out of nowhere was the tell)
-before assuming the tree is yours; never pull a stale remote into a
-newer working tree.
+LaunchDeck became the public product and repository name. Entry modules,
+settings, generated runner prefix, and dashboard identity were renamed. The
+optional Go process helper was kept as a separate accelerator. Screenshots
+were added to the README.
+
+## One branch and local configuration — 2026-09-06
+
+The repository settled on one `main` branch. Machine-local configuration,
+registry state, settings, logs, and executables are ignored; fresh clones start
+with an empty manifest and add works through the dashboard.
 
 ## Incidents that shaped the rules
 
-- **2026-08-30 (x2):** infinite terminal spawn from a debug loop; loose
-  kill pattern took Discord/browser/VS Code. -> machine-side-effect
-  rule + DOWN-ONLY + token hygiene (see `kill-safety.md`).
-- **2026-09-05:** ancestor-walk kill took the agent session + user apps.
-  -> protected chain (see `kill-safety.md`).
-- **2026-09-05/06:** Clint headless saga (windowless-but-running tree).
-  -> headless doctrine (see `windows.md`).
-- **2026-09-06:** Thai bytes in a browser tab CommandLine crashed scans
-  under locale `cp1252`. -> utf-8+replace on every capture
-  (see `verification.md`).
+- **2026-08-30:** a debug loop spawned repeated terminals; an overly broad kill
+  pattern reached Discord, a browser, and VS Code. This led to the
+  machine-side-effect rule, DOWN-ONLY traversal, and token hygiene
+  (`kill-safety.md`).
+- **2026-09-05:** an ancestor walk reached the agent session and user apps.
+  This led to the protected process chain (`kill-safety.md`).
+- **2026-09-05/06:** a headless work kept running without a window. This led to
+  the headless doctrine (`windows.md`).
+- **2026-09-06:** Thai bytes in a browser tab command line crashed scans under
+  `cp1252`. Captures now use UTF-8 with replacement (`verification.md`).
 
-## Hide-path revert (2026-09-06)
+## Hide-path revert — 2026-09-06
 
-`2ed9c4a` (launch-capture + X-disarm + `r` rebirth) made `h` hide worse
-than the `9c77ea3`/`new-version` shape, so `wc_core.py` / `wc.py` /
-`wctray.py` were reverted to `new-version` (+ kept utf-8+replace
-hardening); Docs trimmed of capture/disarm/rebirth refs;
-`wc_logs/*.log` untracked (`.track.bat` + `registry.json` stay tracked).
-`hermess.bat` kept (live shim points at it).
+The hide-path experiment made the `h` key less reliable than the prior shape.
+The launcher was reverted while UTF-8 hardening stayed. Runtime logs and
+registry state remained machine-local, and the Hermes shim stayed in place.
 
-## Rename: `Thiraded/wc-launcher` -> `Thiraded/launchdeck` (2026-09-06)
+## Public repository cleanup — 2026-09-06
 
-Second rename, picking a pro product name; README gained real screenshots
-(`assets/`: dashboard, log viewer, task editor). Old URLs redirect.
-
-## One branch + brutal gitignore (2026-09-06)
-
-Two branches for one machine's config was pure overhead, and a
-`works.example.json` template was rejected as ceremony. Now: single
-`main`; `.gitignore` covers everything machine-local (`works.json`,
-`registry.json`, settings, logs, exes) — fresh clones start from an
-empty manifest and add works via the dashboard editors. Local
-`personal` branch deleted (real config stayed on disk, never pushed).
-
-## File rename: `wc-*` -> `launchdeck-*` (2026-09-06)
-
-Entry points + modules renamed for the product name: `launchdeck.py` /
-`launchdeck_dashboard.py` (+ `.bat` launchers), `launchdeck_core.py`,
-`launchdeck_tray.py`, `test_launchdeck_core.py`,
-`launchdeck.settings.txt`, `launchdeck-gen-<id>.bat` prefix,
-`[deck] launch` marker. Election/reaper scans match the new dashboard
-filename (else duplicate trays). Runtime dir `wc_logs/` and local
-`wc-vscode` profile dirs keep their names (invisible, machine-local).
-Outside the repo: `wc-bin` shims repointed, Desktop shortcut is now
-`launchdeck.lnk`.
-
-## Rename: `Thiraded/WorkCombo` -> `Thiraded/wc-launcher` + public (2026-09-06)
-
-Repo renamed and made public as a reusable launcher. Single `main`
-(code + docs + README); personal `works.json` stays on disk
-(git-ignored, never pushed). Removed from tracking: 9 legacy `.bat` launchers
-(batless config since the steps migration), `gowc.exe` (rebuild via
-`go build` in `gowc/`), `spikes/` scratch, runtime files (`registry.json`,
-`wc.settings.txt`, `wc_logs/*.track.bat` — local-only, git-ignored).
+The public repository kept source, docs, and screenshots. Generated launchers,
+spike scratch files, and runtime state remained local and ignored.

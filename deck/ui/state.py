@@ -12,7 +12,7 @@ from deck.ui import theme
 
 HERE = Path(__file__).resolve().parents[2]  # repo root
 
-LOG = HERE / "wc_logs" / "launchdeck-tray.log"
+LOG = HERE / "launchdeck_logs" / "launchdeck-tray.log"
 
 APP_TIP = "Works"
 

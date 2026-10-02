@@ -19,9 +19,6 @@ ID_QUIT = 4002
 ID_BASE = 5000  # per-work: BASE+i*2 = start/stop, +1 = log viewer
 
 class WorkTray(TrayIcon):
-    def toggle_console(self):
-        state.actions.put("toggle_ui")  # left-click -> dashboard popup
-
     def on_hotkey(self, hid):
         """Global Alt+W pressed anywhere -> toggle the dashboard."""
         state.actions.put("toggle_ui")

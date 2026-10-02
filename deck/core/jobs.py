@@ -10,7 +10,7 @@ Rules (spike 2026-09-30, see Docs/kill-safety.md "Job Objects"):
 * No KILL_ON_JOB_CLOSE: works must outlive a deck restart.
 * A job's NAME dies with its last handle even while members run, so a
   copy of the handle is planted in the root child; a restarted deck (or
-  the console TUI) reopens the job by name.
+  another LaunchDeck process can reopen the job by name.
 * Only all-terminal works are jobbed. `app` steps hand off to GUI apps
   (Brave, Unity Hub) that may be born inside the job; those stay on the
   legacy path. A browser a terminal work opens (npx inspector) can still

@@ -9,10 +9,10 @@
   reparented descendants, failed sweeps, and scan failures).
 - Headless key-sequence simulation: Space -> `[X]`, Enter ->
   kill/launch, Esc -> quit.
-- **Manual smoke on Windows** (standing gate, still open): open
-  `launchdeck.bat`, Space on a work (`[ ]`->`[X]`), Enter on a running `[-]`
-  work kills it, Enter on a stopped one launches it. Do NOT claim DONE
-  until a human confirms this in the real window.
+- **Manual smoke on Windows** (standing gate, still open): run `launchdeck`
+  or click the Desktop shortcut; confirm the dashboard and tray icon open.
+  Start/Stop one selected work in the dashboard. Do NOT claim DONE until a
+  human confirms this in the real window.
 - Kill covers the `cmd` host AND child `node.exe` (no zombie windows).
 - The deck never hangs the host: single shared scan, background `[-]`
   monitor (2s), no unbounded loops in the key path.

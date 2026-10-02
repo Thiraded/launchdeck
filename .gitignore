@@ -5,9 +5,8 @@ __pycache__/
 *.tmp
 desktop.ini
 .DS_Store
-wc_logs/
+*logs/
 registry.json
 works.json
 launchdeck.settings.txt
-gowc.exe
 *.exe

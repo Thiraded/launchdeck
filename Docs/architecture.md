@@ -1,10 +1,9 @@
 # Architecture — how the suite fits together
 
-Entry points: `launchdeck.bat` (console TUI `launchdeck.py`) and
-`launchdeck-tray.bat` (dashboard `launchdeck_dashboard.py`, pythonw,
-no console). All logic lives in `launchdeck_core.py` (no UI); both
-frontends funnel through `launch_work` / `kill_work`, so a fix in
-core covers every Start/Stop path.
+Entry point: `launchdeck` or `launchdeck.bat` opens the dashboard
+(`launchdeck_dashboard.py`, pythonw, no console). All logic lives in
+`launchdeck_core.py` (no UI); the dashboard funnels through `launch_work`
+/ `kill_work`, so a core fix covers every Start/Stop path.
 
 ## Dashboard modules (`deck/ui/`)
 
@@ -46,7 +45,7 @@ qualified (`detect.scan_table`), never `from x import name`.
 | `jobs.py` | Job Object launch/stop (`kill-safety.md` "Job Objects"). |
 | `kill.py` | `kill_work`: job stop, else the legacy passes. |
 | `windows.py` | Find/close a work's windows (legacy Alt+F4 pass). |
-| `model.py` | TUI tree model + selection state machine. |
+| `model.py` | Pure tree model + selection state helpers. |
 | `launch.py` | `run_work`, `launch_work`, `poll_launch`. |
 
 Rule: a function local must never share a sibling module's name (a local
@@ -81,7 +80,7 @@ work you select it `[X]` and press Enter (kill).
 ## Detection (`scan_table` + `is_running`)
 
 One shared process table `(pid, ppid, name, cmdline)` feeds every
-consumer: `gowc.exe scan` when present (~0.07s), else one powershell
+consumer: `launchdeck-helper.exe scan` when present (~0.07s), else one powershell
 `Get-CimInstance Win32_Process` dump (~0.9s). `is_running` /
 `live_running` / `poll_launch` match tokens against it in pure Python
 (no per-work rescan; the live `[-]` monitor is a background thread).
@@ -95,7 +94,7 @@ is not used — see `requirements.md`.
 ## Launch (`launch_work` -> `run_work`)
 
 Default is `"run": "detached"`: NO console at all (`CREATE_NO_WINDOW`),
-the same `.bat` runs, stdout/stderr go to `wc_logs/<id>.log` (fresh per
+the same `.bat` runs, stdout/stderr go to `launchdeck_logs/<id>.log` (fresh per
 Start + `[deck] launch` marker), stdin is NUL. The deck log viewer is
 the docker-logs equivalent (live 1s follow, ANSI colors); a work with
 its own `"log"` key tails that file instead. Visible mode
@@ -138,16 +137,7 @@ Group selected <=> any child selected (pure OR). Space on a group
 toggles ALL children; clearing any child clears the group. Works that
 are group members never render standalone.
 
-## launchdeck.py behavior
+## UI entry point
 
-Cursor nav (Up/Down), `Space`/`t` toggles `[ ]`<->`[X]`, `Enter` acts on
-every `[X]` (kill if `[-]`, else launch), `Esc`/`q` quits (saves `launchdeck.settings.txt` preset). Live `[-]` from the
-background thread; Enter trusts the visible cache over a fresh scan
-(a failed scan must never turn a kill into an accidental launch).
-
-## Key capture
-
-`get_key()` reads the console INPUT buffer via `ReadConsoleInput`
-(ctypes), not `msvcrt.getch()` (which drops keys, esp. Space, in
-bat-spawned consoles). QuickEdit/Mouse modes are disabled at startup
-so a mouse click can't freeze keyboard input.
+`launchdeck.bat` starts `launchdeck_dashboard.py` with `pythonw.exe`.
+The dashboard opens on launch and keeps its tray icon available.

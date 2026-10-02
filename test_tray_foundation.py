@@ -16,7 +16,6 @@ class Tests(unittest.TestCase):
         tray = launchdeck_tray.TrayIcon()
         self.assertTrue(tray._init_ok, tray.last_error)
         self.assertIs(launchdeck_tray.kernel32.GetModuleHandleW.restype, ctypes.c_void_p)
-        self.assertIs(launchdeck_tray.kernel32.GetConsoleWindow.restype, ctypes.c_void_p)
 
     def test_stop_posts_shutdown_without_cross_thread_destroy(self):
         tray, thread = launchdeck_tray.TrayIcon(), mock.Mock()

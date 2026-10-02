@@ -1,6 +1,6 @@
 # Tray (deck dashboard) — behavior, backlog, trials
 
-`launchdeck_dashboard.py` (via `launchdeck-tray.bat`, pythonw, no console): tray icon +
+`launchdeck_dashboard.py` (via `launchdeck.bat`, pythonw, no console): tray icon +
 dashboard popup (PowerToys-Workspaces style) with per-work
 Start/Stop/Restart/Log, [+ New Task], per-work edit/delete
 (writes `works.json`). Stop = job-member kill for jobbed works, else the
@@ -40,7 +40,7 @@ elsewhere closes everything, clicking one of them keeps all.
 
 The default for ALL works since 2026-09-06 (user moved the whole
 suite off visible windows). No console at all (`CREATE_NO_WINDOW`);
-output goes to `wc_logs/<id>.log`, and the dashboard shows a log
+output goes to `launchdeck_logs/<id>.log`, and the dashboard shows a log
 viewer instead of Hide/Show (deck console `h` reports "no window"
 for detached works). Viewer rules:
 
@@ -65,9 +65,9 @@ returns NULL. The tray window CANNOT be `HWND_MESSAGE`
 `WS_POPUP` + `hWndParent=None`). Popup items arrive via `WM_COMMAND`
 (command id in `wParam` low word) — `WndProc` MUST handle it. Quit from
 the tray writes a synthetic Esc into the console input buffer
-(`WriteConsoleInputW` + `KEY_EVENT`) so the loop unwinds and the preset
-saves (`os._exit` only as fallback). Keep the `WINFUNCTYPE` callback
-referenced until `EnumWindows` returns. Diagnostics: `wc_logs/tray.log`.
+The dashboard handles Quit on its Tk thread and stops the tray host there.
+Keep the `WINFUNCTYPE` callback referenced until `EnumWindows` returns.
+Diagnostics: `launchdeck_logs/tray.log`.
 
 ## Backlog (user feedback 2026-09-05, in order, one at a time)
 
@@ -77,7 +77,7 @@ referenced until `EnumWindows` returns. Diagnostics: `wc_logs/tray.log`.
 - [x] **2. Inline commands + variables** — DONE 2026-09-06.
       Editor has Commands (one per line, `app:` prefix = App step)
       + Vars (`NAME=value`) boxes; core `materialize_steps` writes
-      `wc_logs/launchdeck-gen-<id>.bat` (`set` lines, terminal lines, `app:`
+      `launchdeck_logs/launchdeck-gen-<id>.bat` (`set` lines, terminal lines, `app:`
       via `start`), so launch/log/detect/kill follow the .bat path
       (gen name added to kill tokens). Hamster-Clint migrated first.
       2026-09-06: ALL works are steps+vars, `bat` keys removed from
@@ -200,14 +200,14 @@ in any persistent CommandLine — `match: Code.exe` lit every VSCode
 work at once, and worse, Stop seeded kills on Code.exe (NOT in the
 protected GUI set) taking every VSCode window down. Fix: each
 tracked VSCode work launches its own profile
-(`--user-data-dir %LOCALAPPDATA%\wc-vscode\<id>`, stock extensions
+(`--user-data-dir %LOCALAPPDATA%\launchdeck-vscode\<id>`, stock extensions
 shared via `--extensions-dir`) and matches on that unique dir
 fragment. Dots track per-project, kills stay inside that instance
 tree, stock VSCode is never touched. First Start opens a fresh
 profile window (sign in for Settings Sync); old windows are
 unaffected. A fresh profile is vanilla (default dark): pre-seed it by
 copying the stock `%APPDATA%\Code\User` settings/snippets/profiles
-into each `%LOCALAPPDATA%\wc-vscode\<id>\User` (extensions are
+into each `%LOCALAPPDATA%\launchdeck-vscode\<id>\User` (extensions are
 already shared via `--extensions-dir`, so the theme comes along).
 
 ## PARK-IN-^ trial (2026-09-05 evening) — verdict: STILL BROKEN

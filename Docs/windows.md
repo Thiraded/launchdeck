@@ -49,5 +49,5 @@ running-but-windowless reports not-found (see above).
   attributed — never touched automatically (ask first).
 - WT-manual runs: guarded out (closing a shared WT window would take
   the user's tabs); process-level kill only.
-- `launchdeck.py` has no respawn sweep (the deck does): a dev server forking a
-  fresh console after minimize leaves the new one visible.
+- The dashboard owns the respawn sweep: a dev server that creates a fresh
+  console after start is handled by the dashboard's window pass.

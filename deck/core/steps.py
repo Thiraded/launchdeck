@@ -3,17 +3,17 @@
 import os
 import re
 
-from deck.core import common
+from deck.core import common, store
 
 # --------------------------------------------------------------------------
 # run / kill
 # --------------------------------------------------------------------------
 def work_log_path(work: dict) -> str:
     """Log file for a detached work (docker-logs equivalent). Under
-    wc_logs/ (git-ignored). Created on first detached launch."""
+    launchdeck_logs/ (git-ignored). Created on first detached launch."""
     wid = work.get("id", "work")
     safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in wid)
-    d = os.path.join(str(common.HERE), "wc_logs")
+    d = os.path.join(str(common.HERE), "launchdeck_logs")
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, safe + ".log")
 
@@ -23,13 +23,27 @@ def work_display_log_path(work: dict) -> str:
 
     A work with its own `"log"` key (e.g. omniroute-cli, whose .bat
     redirects to `%LOCALAPPDATA%\\bg-launcher-logs\\...`) shows THAT file;
-    everyone else shows the per-launch `wc_logs/<id>.log`. Only wc_logs
-    files are truncated on Start -- external logs are owned by their app.
+    everyone else shows the per-launch `launchdeck_logs/<id>.log`. Only
+    LaunchDeck log files are truncated on Start -- external logs are owned
+    by their app.
     """
     own = work.get("log")
     if own:
         return os.path.expandvars(str(own))
-    return work_log_path(work)
+    current = work_log_path(work)
+    if os.path.isfile(current):
+        return current
+    # A runner already in the registry may still be writing through a path
+    # created by an older LaunchDeck version. Follow that runner's directory
+    # until the work starts again under the current log directory.
+    record = store._load_registry().get(str(work.get("id", "")), {})
+    runner = record.get("runner") if isinstance(record, dict) else None
+    if runner:
+        previous = os.path.join(os.path.dirname(str(runner)),
+                                os.path.basename(current))
+        if os.path.isfile(previous):
+            return previous
+    return current
 
 
 GEN_BAT_PREFIX = "launchdeck-gen-"
@@ -77,7 +91,7 @@ def gen_bat_name(work: dict) -> str:
 
 
 def materialize_steps(work: dict, visible: bool = False) -> str:
-    """Write `wc_logs/launchdeck-gen-<id>.bat` from `steps`+`vars`; return its path.
+    """Write `launchdeck_logs/launchdeck-gen-<id>.bat` from `steps`+`vars`; return its path.
 
     The generated file follows the inline launcher shape (title early,
     `set` lines, terminal steps as sequential lines, `app:` steps via
@@ -134,7 +148,7 @@ def materialize_steps(work: dict, visible: bool = False) -> str:
         # cmd parses .bat files in the OEM codepage; switch to UTF-8 first
         # so non-ASCII paths/labels survive (ASCII scripts stay untouched).
         text = "@chcp 65001 >nul" + body + text
-    d = os.path.join(str(common.HERE), "wc_logs")
+    d = os.path.join(str(common.HERE), "launchdeck_logs")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, gen_bat_name(work))
     # cmd.exe reads a running .bat by byte offset: rewriting it under a live

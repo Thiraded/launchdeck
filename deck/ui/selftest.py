@@ -75,7 +75,7 @@ def self_test():
                    {"id": "b", "hotkey": "ctrl+alt+1"}]}) == {"ctrl+alt+1": ["a", "b"]}
     from launchdeck_tray import register_hotkey as _rh, unregister_hotkey as _uh
     hwnd = d.root.winfo_id()
-    # A tk window has no wc handler: DefWindowProc's 0 must read as a
+    # A Tk window has no custom WndProc: DefWindowProc's 0 must read as a
     # clean False (never a false-positive success).
     assert _rh(hwnd, 65001, 0x3, 0x87) is False
     assert _uh(hwnd, 65001) is False

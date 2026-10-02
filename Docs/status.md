@@ -1,4 +1,17 @@
-# Status — current state and open gates (2026-09-06 evening)
+# Status — current state and open gates (updated 2026-10-02)
+
+## 2026-10-02 — single UI and shortcuts
+
+- `launchdeck` now starts the dashboard UI; the terminal frontend was removed.
+  Desktop and Startup shortcuts point to `D:\launchdeck\launchdeck.bat`.
+- Dashboard processes 16912 and 19960 are still running pre-change code.
+  Active work runners are PIDs 13364, 5932, and 31128; their command lines and
+  registry entries reference runner files under the previous runtime folder.
+  Keep that folder and the old helper executable until these processes stop
+  naturally. The updated source writes to `launchdeck_logs/` and uses the
+  renamed helper after the old dashboard exits.
+- The old profile directory was moved after confirming no `Code.exe` command
+  line references it. The next LaunchDeck start uses the renamed profile path.
 
 ## 2026-10-01 — Job Objects (pending live check)
 
@@ -57,10 +70,9 @@ Next steps + live checklist: `Docs/plan.md` sections 6 and 9.
    marshal-probes the live tray window to confirm end-to-end).
 2. Start each stopped work once from the dashboard (server, quest,
    unity, vscode, cli, web, mcp) -- first live boot on the steps path.
-3. The old standing gates (hide-quality, full-close, console smoke)
-   are PRE-detached doctrine -- hide/minimize no longer applies to
-   detached works. Needs a Docs decision (retire or re-scope), not a
-   keyboard drill.
+3. The old hide-quality and full-close gates are PRE-detached doctrine --
+   hide/minimize no longer applies to detached works. The console UI smoke
+   gate retired with the terminal frontend on 2026-10-02.
 4. `test_launchdeck_core.py` -- still blocked while live works run.
 
 ## Known issues (accepted, documented)

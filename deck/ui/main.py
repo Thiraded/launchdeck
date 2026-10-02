@@ -55,7 +55,7 @@ def main():
             r = tk.Tk()
             r.withdraw()
             messagebox.showerror("deck crashed",
-                                 "deck hit an error. See wc_logs/launchdeck-tray.log")
+                                 "deck hit an error. See launchdeck_logs/launchdeck-tray.log")
             r.destroy()
         except Exception:
             pass

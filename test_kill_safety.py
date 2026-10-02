@@ -8,7 +8,6 @@ import launchdeck_core as core
 from deck.core import jobs as _jobs
 # Never open/kill a real deck job from a test (isolated namespace).
 _jobs.PREFIX = "Local\\launchdeck-test-%d-" % __import__("os").getpid()
-import launchdeck
 from deck.ui import instance, state, tray as ui_tray
 
 
@@ -123,15 +122,15 @@ class KillSafetyTests(unittest.TestCase):
 
     def test_registered_launch_root_wins_over_other_matching_processes(self):
         table = [
-            (200, 1, "cmd.exe", "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+            (200, 1, "cmd.exe", "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (201, 200, "node.exe", "node D:\\apps\\demo.js"),
-            (300, 1, "cmd.exe", "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+            (300, 1, "cmd.exe", "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (301, 300, "node.exe", "node D:\\apps\\other.js"),
         ]
         registry = {
             "demo": {
                 "pid": 200,
-                "runner": "D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat",
+                "runner": "D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat",
             }
         }
         with mock.patch.object(core, "scan_table", return_value=table), \
@@ -145,7 +144,7 @@ class KillSafetyTests(unittest.TestCase):
     def test_runner_token_does_not_union_another_identity_token(self):
         table = [
             (200, 1, "cmd.exe",
-             "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+             "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (201, 200, "node.exe", "node D:\\apps\\demo.js"),
             (300, 1, "cmd.exe", "cmd.exe /c D:\\other\\start.bat"),
         ]
@@ -162,10 +161,10 @@ class KillSafetyTests(unittest.TestCase):
     def test_duplicate_generated_runner_roots_are_one_work_identity(self):
         table = [
             (200, 1, "cmd.exe",
-             "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+             "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (201, 200, "node.exe", "node D:\\apps\\demo.js"),
             (300, 1, "cmd.exe",
-             "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+             "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (301, 300, "node.exe", "node D:\\apps\\demo.js"),
         ]
         with mock.patch.object(core, "scan_table", return_value=table), \
@@ -179,7 +178,7 @@ class KillSafetyTests(unittest.TestCase):
     def test_runner_can_add_manual_project_root_but_not_env_file_reference(self):
         table = [
             (200, 1, "cmd.exe",
-             "cmd.exe /c D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat"),
+             "cmd.exe /c D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat"),
             (201, 200, "node.exe", "node D:\\apps\\demo\\runner.js"),
             (300, 1, "node.exe", "node D:\\apps\\demo\\server.js"),
             (400, 1, "node.exe",
@@ -188,7 +187,7 @@ class KillSafetyTests(unittest.TestCase):
         registry = {
             "demo": {
                 "pid": 200,
-                "runner": "D:\\launchdeck\\wc_logs\\launchdeck-gen-demo.bat",
+                "runner": "D:\\launchdeck\\launchdeck_logs\\launchdeck-gen-demo.bat",
             }
         }
         with mock.patch.object(core, "scan_table", return_value=table), \
@@ -242,7 +241,7 @@ class KillSafetyTests(unittest.TestCase):
         with mock.patch.object(core, "scan_table", side_effect=lambda: next(scans)), \
                 mock.patch.object(core, "_load_registry", return_value={}), \
                 mock.patch.object(core, "close_work_windows", return_value=0), \
-                mock.patch.object(core, "_gowc_available", return_value=False), \
+                mock.patch.object(core, "_launchdeck_helper_available", return_value=False), \
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)):
@@ -271,7 +270,7 @@ class KillSafetyTests(unittest.TestCase):
                                             [(999, 1, "other.exe", "other")]]), \
                 mock.patch.object(core, "_load_registry", return_value={}), \
                 mock.patch.object(core, "close_work_windows", return_value=0), \
-                mock.patch.object(core, "_gowc_available", return_value=False), \
+                mock.patch.object(core, "_launchdeck_helper_available", return_value=False), \
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
@@ -322,7 +321,7 @@ class KillSafetyTests(unittest.TestCase):
                                             [(999, 1, "other.exe", "other")]]), \
                 mock.patch.object(core, "_load_registry", return_value={}), \
                 mock.patch.object(core, "close_work_windows", return_value=0), \
-                mock.patch.object(core, "_gowc_available", return_value=False), \
+                mock.patch.object(core, "_launchdeck_helper_available", return_value=False), \
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
@@ -347,7 +346,7 @@ class KillSafetyTests(unittest.TestCase):
                                side_effect=[initial, initial, initial]), \
                 mock.patch.object(core, "_load_registry", return_value={}), \
                 mock.patch.object(core, "close_work_windows", return_value=0), \
-                mock.patch.object(core, "_gowc_available", return_value=False), \
+                mock.patch.object(core, "_launchdeck_helper_available", return_value=False), \
                 mock.patch.object(core.time, "sleep"), \
                 mock.patch.object(core.subprocess, "run",
                                   side_effect=lambda args, **_kw: taskkills.append(args)), \
@@ -452,7 +451,7 @@ class KillSafetyTests(unittest.TestCase):
     def test_enter_action_refuses_to_launch_on_failed_scan(self):
         work = {"id": "w", "label": "W", "match": "tok-xyz"}
         node = core.Node("w", "W", "work", work=work)
-        with mock.patch.object(core, "_scan_table_gowc", return_value=None), \
+        with mock.patch.object(core, "_scan_table_helper", return_value=None), \
                 mock.patch.object(core, "_scan_table_ps", return_value=[]):
             self.assertEqual(core.enter_action(core.ON, node, [node]), [])
 
@@ -509,9 +508,9 @@ class KillSafetyTests(unittest.TestCase):
                                          include_ancestors=False)
         self.assertEqual(found, [100])
 
-    def test_empty_gowc_scan_falls_back_to_powershell(self):
+    def test_empty_helper_scan_falls_back_to_powershell(self):
         ps_rows = [(10, 1, "cmd.exe", "cmd.exe /c demo.bat")]
-        with mock.patch.object(core, "_gowc_available", return_value=True), \
+        with mock.patch.object(core, "_launchdeck_helper_available", return_value=True), \
                 mock.patch.object(core.subprocess, "run",
                                   return_value=SimpleNamespace(returncode=0, stdout="")), \
                 mock.patch.object(core, "_scan_table_ps", return_value=ps_rows) as fallback:
@@ -521,7 +520,7 @@ class KillSafetyTests(unittest.TestCase):
 
     def test_scan_commandlines_excludes_launcher_pid(self):
         rows = [
-            (os.getpid(), 1, "python.exe", "python launchdeck.py target"),
+            (os.getpid(), 1, "pythonw.exe", "pythonw launchdeck_dashboard.py target"),
             (20, 1, "node.exe", "node target.js"),
         ]
         with mock.patch.object(core, "scan_table", return_value=rows):
@@ -571,14 +570,14 @@ class KillSafetyTests(unittest.TestCase):
 
     def test_scan_available_is_per_thread(self):
         import threading
-        with mock.patch.object(core, "_scan_table_gowc", return_value=None), \
+        with mock.patch.object(core, "_scan_table_helper", return_value=None), \
                 mock.patch.object(core, "_scan_table_ps",
                                   return_value=[(1, 0, "x.exe", "x")]):
             core.scan_table()
         seen = []
 
         def other():
-            with mock.patch.object(core, "_scan_table_gowc", return_value=None), \
+            with mock.patch.object(core, "_scan_table_helper", return_value=None), \
                     mock.patch.object(core, "_scan_table_ps", return_value=[]):
                 core.scan_table()
             seen.append(core.scan_available())

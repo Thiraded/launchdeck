@@ -1,4 +1,4 @@
-"""launchdeck_core.py — pure logic for the launchdeck console and dashboard.
+"""launchdeck_core.py — pure logic for the launchdeck dashboard.
 
 The code lives in `deck/core/` (map: Docs/architecture.md "Core modules").
 This module is the stable facade every frontend, .bat and test imports:
@@ -7,11 +7,8 @@ go to the submodule that OWNS X, which is where its callers look it up.
 
 Key concepts
 -----------
-* Work Combo (wc): SELECT / RUN. A group has NO state of its own -- its
-  selection is the logical OR of its children:
-      group selected  <=>  (any child selected)
-  So: Space on a group selects all children; Space again clears them;
-  clearing any child clears the group too.
+* A group has no state of its own -- its selection is the logical OR of its
+  children: group selected iff any child is selected.
 * Running state `[-]` is the work's Job Object when the deck launched it,
   else detected live from the process CommandLine (token = runner basename
   or explicit `match`). It is shown separately from selection.

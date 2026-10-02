@@ -1,10 +1,10 @@
-"""Tree model + selection state machine for the console TUI."""
+"""Tree model + selection state helpers used by core callers and checks."""
 
 from deck.core import manifest as manifest_mod, detect
 
 # The manifest most recently used to build the model. member_nodes() reads
-# works from HERE (not from disk) so group membership is consistent with the
-# tree wc/kc actually render. Set by build_model().
+# works from HERE (not from disk) so group membership stays consistent.
+# Set by build_model().
 _CURRENT_MANIFEST = None
 
 # State tokens (selection column)

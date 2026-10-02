@@ -71,7 +71,7 @@ class JobLifecycle(unittest.TestCase):
                 jobs._k32.TerminateJobObject(h, 1)
                 _wait(lambda: not jobs._pids(h), 3)  # log handles close
             for p in (core.work_log_path(w),
-                      os.path.join(os.path.dirname(core.__file__), "wc_logs",
+                      os.path.join(os.path.dirname(core.__file__), "launchdeck_logs",
                                    core.gen_bat_name(w))):
                 for _ in range(20):  # a just-killed child may still hold the log
                     try:

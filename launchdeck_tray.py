@@ -1,27 +1,8 @@
-"""launchdeck_tray.py — system-tray host for launchdeck, using ONLY ctypes (no dependencies).
+"""Windows notification-area primitives for the LaunchDeck dashboard.
 
-Windows already ships the shell tray API; we talk to it directly so launchdeck gains a
-system-tray icon + show/hide without pulling in pystray/Pillow.
-
-Public surface:
-  TrayIcon(tip="...", color=(r,g,b))
-    .start()                     # spin up the icon on a background thread
-    .stop()                      # remove icon, end the thread
-    .hide_console() / .show_console() / .toggle_console()
-    .notify(title, text)         # balloon tooltip (e.g. "work is running")
-    .on_quit = callable          # called when the user picks Quit in the menu
-    .quit_event                  # threading.Event set when Quit is chosen
-    .available                   # True if a console+tray could be created
-
-Behavior (per user decision 2026-08-30):
-  * Clicking the X on the deck console really quits (safe).
-  * "h" in the console hides it to the tray; the tray icon (left-click toggles,
-    right-click menu = Show / Hide / Quit) brings it back.
-  * When a launched work is detected as running, the deck fires a balloon so the user
-    knows "it opened" without having to open the window.
-
-Everything is wrapped: if the tray can't be created (headless / no explorer),
-the deck keeps running normally and hiding is simply a no-op.
+Windows already ships the shell tray API; this module uses ctypes directly
+and has no external dependencies. `TrayIcon` owns the icon thread and routes
+events to its host. The dashboard owns its own window and menu behavior.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -31,7 +12,7 @@ import os as _os
 import traceback as _tb
 
 # diagnostic log (independent of launchdeck_core) so failures are visible
-_TRAY_LOG_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "wc_logs")
+_TRAY_LOG_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "launchdeck_logs")
 _TRAY_LOG_PATH = _os.path.join(_TRAY_LOG_DIR, "tray.log")
 
 
@@ -88,15 +69,10 @@ NIIF_WARNING = 0x00000002
 NIIF_ERROR = 0x00000003
 NIIF_NOSOUND = 0x00000010
 
-SW_HIDE = 0
-SW_SHOW = 5
-SW_RESTORE = 9
 
 HWND_MESSAGE = ctypes.c_void_p(-3)
 WS_POPUP = 0x80000000
 
-IDM_SHOW = 1001
-IDM_HIDE = 1002
 IDM_QUIT = 1003
 
 TPM_RIGHTBUTTON = 0x0002
@@ -248,14 +224,8 @@ def _set_prototypes():
         ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint64, ctypes.c_int64]
     user32.PostMessageW.restype = ctypes.c_int
 
-    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
-    user32.ShowWindow.restype = ctypes.c_int
-
     user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
     user32.SetForegroundWindow.restype = ctypes.c_int
-
-    kernel32.GetConsoleWindow.argtypes = []
-    kernel32.GetConsoleWindow.restype = ctypes.c_void_p
 
     user32.CreatePopupMenu.argtypes = []
     user32.CreatePopupMenu.restype = ctypes.c_void_p
@@ -454,10 +424,12 @@ def _wndproc(hwnd, msg, wparam, lparam):
                 _tray_log(f"[wndproc] on_tray_event failed: {e}")
             return 0
         if ev in (WM_LBUTTONUP, 0x0203):  # 0x0203 = WM_LBUTTONDBLCLK
-            try:
-                inst.toggle_console()
-            except Exception:
-                pass
+            handler = getattr(inst, "on_left_click", None)
+            if callable(handler):
+                try:
+                    handler()
+                except Exception:
+                    pass
             return 0
         if ev in (WM_RBUTTONUP, WM_CONTEXTMENU):
             _tray_log(f"[wndproc] right-click on icon → _show_menu")
@@ -586,8 +558,8 @@ def unregister_hotkey(hwnd, hid):
 
 
 class TrayIcon:
-    def __init__(self, tip="Work Combo (wc)", color=(0, 120, 215)):
-        self.tip = (tip or "wc")[:127]
+    def __init__(self, tip="LaunchDeck", color=(0, 120, 215)):
+        self.tip = (tip or "LaunchDeck")[:127]
         self.color = color
         self.msg = WM_USER + 1
         self.hwnd = None
@@ -595,12 +567,10 @@ class TrayIcon:
         self.icon = None
         self.available = False
         self._alive = False
-        self._visible = True  # console currently shown
         self._thread = None
         self._wndproc_cb = None  # keep the WNDPROC alive (no GC)
         self.on_quit = None
         self.quit_event = threading.Event()
-        self.console_hwnd = None
         self.taskbar_created = 0
         self.last_error = ""
         self._init_ok = False
@@ -611,10 +581,8 @@ class TrayIcon:
                 _set_prototypes()
                 self.taskbar_created = user32.RegisterWindowMessageW(
                     "TaskbarCreated")
-                self.console_hwnd = kernel32.GetConsoleWindow()
                 self._init_ok = True
             except Exception as e:
-                self.console_hwnd = None
                 self.last_error = f"Win32 initialization failed: {e}"
                 _tray_log(f"[init] {self.last_error}: {_tb.format_exc()}")
 
@@ -669,7 +637,7 @@ class TrayIcon:
             cls.style = CS_OWNDC
             cls.lpfnWndProc = ctypes.cast(self._wndproc_cb, ctypes.c_void_p)
             cls.hInstance = self.hinst
-            cls.lpszClassName = "wcTrayClass"
+            cls.lpszClassName = "LaunchDeckTrayClass"
             atom = user32.RegisterClassExW(ctypes.byref(cls))
             if not atom:
                 _tray_log(f"[_run] RegisterClassExW failed: {self._last_err()}")
@@ -677,11 +645,11 @@ class TrayIcon:
             _tray_log(f"[_run] class registered atom={atom}")
 
             self.hwnd = user32.CreateWindowExW(
-                0, "wcTrayClass", "wcTray", WS_POPUP,
+                0, "LaunchDeckTrayClass", "LaunchDeckTray", WS_POPUP,
                 0, 0, 0, 0, None, None, self.hinst, None)
             if not self.hwnd:
                 _tray_log(f"[_run] CreateWindowExW failed: {self._last_err()}")
-                user32.UnregisterClassW("wcTrayClass", self.hinst)
+                user32.UnregisterClassW("LaunchDeckTrayClass", self.hinst)
                 return
             _tray_log(f"[_run] hwnd={self.hwnd!r}")
 
@@ -744,7 +712,7 @@ class TrayIcon:
             self.hwnd = None
         try:
             if destroyed and self.hinst:
-                user32.UnregisterClassW("wcTrayClass", self.hinst)
+                user32.UnregisterClassW("LaunchDeckTrayClass", self.hinst)
         except Exception as e:
             _tray_log(f"[cleanup] unregister class failed: {e}")
 
@@ -807,7 +775,7 @@ class TrayIcon:
         shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
 
     def set_tooltip(self, text):
-        self.tip = (text or "wc")[:127]
+        self.tip = (text or "LaunchDeck")[:127]
         if not (self.hwnd and self._alive):
             return
         nid = NOTIFYICONDATA()
@@ -897,57 +865,10 @@ class TrayIcon:
             except Exception:
                 pass
 
-    # -- console show/hide ------------------------------------------------
-    def _resolve_console(self):
-        """Re-fetch GetConsoleWindow() if we don't have one yet (handles the
-        case where wc was launched from a launcher that hadn't attached a
-        console yet, or via launchdeck.bat which gives us one very early)."""
-        if not self.console_hwnd and _HAVE_WIN:
-            try:
-                self.console_hwnd = kernel32.GetConsoleWindow() or None
-            except Exception:
-                pass
-        return self.console_hwnd
-
-    def show_console(self):
-        h = self._resolve_console()
-        _tray_log(f"[show_console] hwnd={h!r} prev={self._visible}")
-        if h:
-            user32.ShowWindow(h, SW_RESTORE)
-            user32.SetForegroundWindow(h)
-        self._visible = True
-
-    def hide_console(self):
-        h = self._resolve_console()
-        _tray_log(f"[hide_console] hwnd={h!r} prev={self._visible}")
-        if h:
-            r = user32.ShowWindow(h, SW_HIDE)
-            _tray_log(f"[hide_console] ShowWindow returned {r}")
-        else:
-            _tray_log("[hide_console] NO console hwnd to hide")
-        self._visible = False
-
-    def toggle_console(self):
-        if self._visible:
-            self.hide_console()
-        else:
-            self.show_console()
-
-    @property
-    def visible(self):
-        return self._visible
-
     # -- menu -------------------------------------------------------------
     def _show_menu(self):
         hmenu = user32.CreatePopupMenu()
-        user32.AppendMenuW(
-            hmenu, MF_STRING, IDM_SHOW,
-            "Show" if not self._visible else "Show (already shown)")
-        user32.AppendMenuW(
-            hmenu, MF_STRING, IDM_HIDE,
-            "Hide" if self._visible else "Hide (already hidden)")
-        user32.AppendMenuW(hmenu, MF_SEPARATOR, 0, None)
-        user32.AppendMenuW(hmenu, MF_STRING, IDM_QUIT, "Quit wc")
+        user32.AppendMenuW(hmenu, MF_STRING, IDM_QUIT, "Quit LaunchDeck")
         pt = POINT()
         user32.GetCursorPos(ctypes.byref(pt))
         # Bring the (now-foreground-capable) tray window forward, then show
@@ -962,48 +883,29 @@ class TrayIcon:
             self._on_menu(cmd)
 
     def _on_menu(self, cmd):
-        if cmd == IDM_SHOW:
-            self.show_console()
-        elif cmd == IDM_HIDE:
-            self.hide_console()
-        elif cmd == IDM_QUIT:
+        if cmd == IDM_QUIT:
             self.quit_event.set()
             try:
                 if self.on_quit:
                     self.on_quit()
             except Exception:
                 pass
-            # If the wc main loop is blocked in get_key, signal it via a
-            # fake keypress on the console input buffer. Fall back to a hard
-            # exit only if that fails.
-            try:
-                import ctypes as _c
-                import ctypes.wintypes as _wt
-                hIn = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
-                inp = (_c.c_ubyte * 28)()
-                inp[0] = 0x1B  # KEY_EVENT
-                _c.windll.kernel32.WriteConsoleInputW(hIn, inp, 1, None)
-            except Exception:
-                try:
-                    _os._exit(0)
-                except Exception:
-                    pass
 
 
 if __name__ == "__main__":
-    # tiny self-demo so you can verify the tray without wc:
+    # Tiny self-demo for checking tray behavior in isolation:
     #   python launchdeck_tray.py
-    t = TrayIcon(tip="wc tray demo")
+    t = TrayIcon(tip="LaunchDeck tray demo")
     if not t.start():
         print("tray not available in this environment")
     else:
-        print("tray up — right-click for Show/Hide/Quit, left-click toggles window")
+        print("tray up — right-click for Quit")
         try:
-            t.notify("Hello", "wc tray is alive")
+            t.notify("Hello", "LaunchDeck tray is alive")
         except Exception:
             pass
         try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
+            while not t.quit_event.wait(1):
+                pass
+        finally:
             t.stop()

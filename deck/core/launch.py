@@ -12,7 +12,7 @@ def run_work(work: dict) -> bool:
     """Launch the work's .bat in a VISIBLE terminal window (no hidden
     self-relaunch). ONE window per work: `start` opens the window that
     hosts the .bat itself (mandatory -- without it the child would share
-    wc's own console), and the .bat MUST be the §4.8 inline shape
+    the launcher's own console), and the .bat MUST be the §4.8 inline shape
     (`cd` -> `cls` -> `cmd /k`, no nested `start`) so a second window
     never appears. Registers it too."""
     step_list = work.get("steps") or []
@@ -83,7 +83,7 @@ def run_work(work: dict) -> bool:
 # is_running() check turning False.
 GRACE_SECONDS = 12
 # HARD SAFETY CAP: if a launcher stays alive this long with no `ready` string
-# and no error, we declare it `stable` and STOP polling it. This prevents wc
+# and no error, we declare it `stable` and STOP polling it. This prevents
 # from ever looping forever. (No work should need longer than this to show it
 # is alive-and-well.)
 STABLE_MAX_SECONDS = 60
@@ -105,7 +105,7 @@ ERROR_KEYWORDS = (
 
 def launch_work(work: dict, commandlines: list[str] | None = None) -> dict | None:
     """Spawn `work`'s .bat (which launches the real background process). Returns
-    a monitor record, or None if the .bat is missing. Caller (wc) decides
+    a monitor record, or None if the .bat is missing. Caller decides
     whether to kill a running instance first -- this just launches.
 
     SAFETY: a single work can start at most LAUNCH_BURST times per
@@ -165,7 +165,7 @@ def poll_launch(rec: dict, work: dict | None = None, commandlines: list[str] | N
     """Return (status, detail) for a launched work, watching its REAL bg proc.
 
     SAFETY: a work still alive but with no `ready` marker and no error past
-    STABLE_MAX_SECONDS is declared `stable` — so wc's monitor loop always ends.
+    STABLE_MAX_SECONDS is declared `stable` — so the monitor loop always ends.
     Pass a pre-scanned `commandlines` (from scan_commandlines) to avoid one
     powershell spawn per poll per work."""
     work = work or rec.get("work") or {}
