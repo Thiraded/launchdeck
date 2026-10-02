@@ -1,10 +1,16 @@
-# Tray (deck dashboard) — behavior, backlog, trials
+# Desktop launcher — behavior, hotkey, popups
 
-`launchdeck_dashboard.py` (via `launchdeck.bat`, pythonw, no console): tray icon +
-dashboard popup (PowerToys-Workspaces style) with per-work
-Start/Stop/Restart/Log, [+ New Task], per-work edit/delete
-(writes `works.json`). Stop = job-member kill for jobbed works, else the
-legacy kill tree (`kill-safety.md`). Restart = kill + fresh launch.
+`launchdeck_dashboard.py` (via `launchdeck.bat`, pythonw, no console) shows
+an always-on-top, circular lightning button on the desktop. It starts near
+the lower-right edge, can be dragged anywhere on the screen, and stays in
+place for the life of the process. The borderless dashboard opens beside
+the button and moves with it. Clicking the button again closes the dashboard
+and all of its child popups. The taskbar tray icon is no longer part of the
+dashboard launch path.
+
+The dashboard has per-work Start/Stop/Restart/Log, [+ New Task], and per-work
+edit/delete (writes `works.json`). Stop = job-member kill for jobbed works,
+else the legacy kill tree (`kill-safety.md`). Restart = kill + fresh launch.
 
 Row actions run on worker threads with `after()`-back marshalling —
 scans once blocked the tk mainloop ("UI hangs" bug). The dashboard
@@ -12,9 +18,9 @@ rebuilds only on running/manifest change (no flicker).
 
 ## Global hotkey (2026-09-06)
 
-One key for the tray itself (default **Alt+W**, changeable in Settings
+One key for the dashboard (default **Alt+W**, changeable in Settings
 — the ⌨ button; stored under manifest `settings.hotkey`): toggles the
-dashboard from anywhere (`RegisterHotKey` on the tray window,
+dashboard from anywhere (`RegisterHotKey` on a hidden native host window,
 `WM_HOTKEY` -> `toggle_ui`). Taken keys are logged, never fatal, and
 _poll retries every 15s until registered. Unregistered on quit.
 Thread rule (2026-09-06 root cause of every "taken" before it):
@@ -26,15 +32,13 @@ conflict. Registration is therefore marshalled via `SendMessageTimeout`
 
 ## Popup behavior (backlog #5, revised 2026-09-06)
 
-Borderless (`overrideredirect`, no title/X — clicking elsewhere
-dismisses, so chrome is dead weight), pinned bottom-right, topmost.
-Dismiss choreography: clicking the **log viewer** keeps both windows;
-clicking the **dashboard** closes open log viewers (`FocusIn`); clicking
-**anywhere else** closes everything (`FocusOut` tree check + hide).
-Task/group editors open like the log viewer (measured size, left of
-the dashboard when it fits). All three are ONE popup class
-(`_track_popup`): clicking the dashboard closes them, clicking
-elsewhere closes everything, clicking one of them keeps all.
+Borderless (`overrideredirect`, no title/X), topmost windows. The dashboard
+anchors to the button; dragging the button while the dashboard is open
+repositions it. Clicking the button closes every child popup immediately.
+Clicking the dashboard closes open log viewers (`FocusIn`); clicking
+anywhere outside the launcher/dashboard tree closes everything (`FocusOut`
+tree check + hide). Task/group editors and log viewers share one popup class
+(`_track_popup`) and close with the dashboard.
 
 ## Detached works (`"run": "detached"` — docker-logs model)
 
@@ -60,13 +64,10 @@ for detached works). Viewer rules:
 `kernel32.GetModuleHandleW(None)` needs its prototype set
 (`argtypes=[c_wchar_p]`, `restype=c_void_p`) — default 32-bit `int`
 return truncates the 64-bit handle and `CreateWindowExW` silently
-returns NULL. The tray window CANNOT be `HWND_MESSAGE`
-(`TrackPopupMenu` needs a real foreground-able top-level window:
-`WS_POPUP` + `hWndParent=None`). Popup items arrive via `WM_COMMAND`
-(command id in `wParam` low word) — `WndProc` MUST handle it. Quit from
-the tray writes a synthetic Esc into the console input buffer
-The dashboard handles Quit on its Tk thread and stops the tray host there.
-Keep the `WINFUNCTYPE` callback referenced until `EnumWindows` returns.
+returns NULL. The hidden hotkey host is a real top-level `WS_POPUP` window
+with `hWndParent=None`; it owns the hotkey message pump. The dashboard handles
+Quit on its Tk thread and stops the native host there. Keep the `WINFUNCTYPE`
+callback referenced for the lifetime of the window.
 Diagnostics: `launchdeck_logs/tray.log`.
 
 ## Backlog (user feedback 2026-09-05, in order, one at a time)
@@ -95,7 +96,8 @@ Diagnostics: `launchdeck_logs/tray.log`.
 - [x] **5. Real popup behavior** — DONE 2026-09-06 (`<FocusOut>` +
       delayed tree check dismisses only when focus leaves the whole
       dashboard tree — editor/log dialogs are child Toplevels so they
-      keep it open; re-pinned bottom-right on every show).
+      keep it open; since 2026-10-02, the dashboard anchors to the desktop
+      button instead of the taskbar corner).
 
 ## Dashboard look (2026-09-06)
 
@@ -187,10 +189,9 @@ covered with a byte-exact restore.
 ## Detached-only (2026-09-06)
 
 Hide is retired, never coming back: every editor save stamps
-`"run": "detached"`, rows and the tray menu show Log only (the
-windowed branch is gone). The core hide/show/sweep backend, tray
-parking and the console `h` key were deleted on 2026-10-01 (the
-monitor no longer runs a window sweep every 3 s).
+`"run": "detached"`, and rows show Log only (the windowed branch is gone).
+The core hide/show/sweep backend, tray parking and the console `h` key were
+deleted on 2026-10-01 (the monitor no longer runs a window sweep every 3 s).
 
 ## VSCode tracking (2026-09-06)
 

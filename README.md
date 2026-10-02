@@ -50,7 +50,7 @@ One dashboard UI and one shared core (`launchdeck_core.py`, zero dependencies):
 
 ## Quickstart
 
-1. Run `launchdeck` or `launchdeck.bat`. The app opens the dashboard and tray icon.
+1. Run `launchdeck` or `launchdeck.bat`. A floating lightning button appears on the desktop; click it to open the dashboard. Drag it to move it.
 2. Add your works: dashboard editors (tasks / groups / settings) or edit
    `works.json` directly — one entry per work:
 
@@ -93,7 +93,7 @@ kill. Details: `Docs/kill-safety.md`.
 | `works.json` | Manifest: `groups[]` + `works[]` (edit me) |
 | `launchdeck_core.py` | Shared logic: manifest, detection, run/kill, registry. No UI |
 | `launchdeck_dashboard.py` | Dashboard UI entry point |
-| `launchdeck_tray.py` | Tray primitives (ctypes only) |
+| `launchdeck_tray.py` | Win32 notification-icon and hidden-hotkey primitives (ctypes only) |
 | `launchdeck-helper/` | Optional Go scan/kill helper (`go build -o ../launchdeck-helper.exe .` inside) |
 | `assets/` | README screenshots |
 | `Docs/` | All knowledge: architecture, kill-safety, tray, verification |

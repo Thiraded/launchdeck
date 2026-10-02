@@ -10,6 +10,7 @@ from launchdeck_tray import register_hotkey
 from launchdeck_tray import unregister_hotkey
 import launchdeck_core as core
 from deck.ui import dpi, icons, state
+from deck.ui.launcher import DesktopLauncher
 from deck.ui import theme
 from deck.ui.actions import ActionsMixin
 from deck.ui.editors import EditorsMixin
@@ -21,6 +22,8 @@ from deck.ui.worklist import WorklistMixin
 class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
     def __init__(self):
         self.root = None
+        self.launcher = None
+        self._launcher_position = None
         self.status_var = None
         self.list_frame = None
         self._canvas = None
@@ -118,14 +121,14 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         # it); clicking elsewhere kills everything via _maybe_autodismiss.
         r.bind("<FocusIn>", lambda _e: self._close_popups())
         self.root = r
+        self.launcher = DesktopLauncher(
+            r, self.toggle, self._launcher_moved, self._launcher_position)
         self.refresh()
         r.after(800, self._poll)
 
     def _handle_action(self, action):
         if action == "toggle_ui":
             self.toggle()
-        elif action == "show_ui":
-            self.show()
         elif isinstance(action, tuple) and len(action) == 2 and action[0] == "log":
             w = state.work_by_id(action[1])
             if w is not None:
@@ -141,13 +144,14 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             self.refresh()
         elif action == "quit":
             try:
-                if state.tray_host is not None and getattr(state.tray_host, "hwnd", None):
-                    unregister_hotkey(state.tray_host.hwnd, 1)
+                host = state.hotkey_host
+                if host is not None and getattr(host, "hwnd", None):
+                    unregister_hotkey(host.hwnd, 1)
             except Exception:
                 pass
             try:
-                if state.tray_host is not None:
-                    state.tray_host.stop()
+                if state.hotkey_host is not None:
+                    state.hotkey_host.stop()
             finally:
                 self.root.destroy()
         else:
@@ -210,19 +214,34 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
 
     def show(self):
         self.ensure()
+        self.show_launcher()
         try:
             self._sweep_pending()  # drop stale marks before first paint
         except Exception:
             pass
         self.refresh()
-        self._place_near_tray()
+        self._place_near_launcher()
         self.root.deiconify()
         try:
             self.root.lift()
             self.root.focus_force()
+            self.launcher.show()
         except Exception:
             pass
         self.visible = True
+
+    def show_launcher(self):
+        """Keep the floating lightning button visible while the popup is closed."""
+        self.ensure()
+        if self.launcher is not None:
+            self.launcher.show()
+
+    def _launcher_moved(self):
+        if self.launcher is None:
+            return
+        self._launcher_position = self.launcher.position()
+        if self.visible:
+            self._place_near_launcher()
 
     def hide(self):
         try:
@@ -235,39 +254,52 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             pass
         self.visible = False
 
-    def _place_near_tray(self, win=None, W=None, H=None):
-        """Pin a window bottom-right (taskbar/resolution may have moved).
-
-        The dashboard pins to the corner; secondary windows (log viewer)
-        sit LEFT of it when it is visible instead of on top of it.
-        W/H are device pixels; default = the dashboard (480x600 design px).
-        """
+    def _place_near_launcher(self, win=None, W=None, H=None):
+        """Anchor the dashboard to the floating button and popups beside it."""
         try:
             win = win or self.root
             W = W or dpi.px(480)
             H = H or dpi.px(600)
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-            edge, bar = dpi.px(16), dpi.px(60)
-            x = sw - W - edge
-            if win is not self.root and self.visible:
-                x = x - dpi.px(400) - dpi.px(12)
-                if x < 0:
+            edge, gap = dpi.px(8), dpi.px(10)
+            if win is self.root:
+                bx, by = self.launcher.position()
+                size = self.launcher.size
+                x = bx if bx + size // 2 < sw // 2 else bx + size - W
+                if x + W > sw - edge:
                     x = sw - W - edge
-            win.geometry(f"{W}x{H}+{x}+{sh - H - bar}")
+                if x < edge:
+                    x = edge
+                bottom = sh - dpi.px(40)
+                below_y = by + size + gap
+                y = below_y if below_y + H <= bottom else by - H - gap
+                y = min(max(edge, y), max(edge, bottom - H))
+            else:
+                # Logs and editors stay just left of the dashboard when there
+                # is room; otherwise place them to its right.
+                dx, dy = self.root.winfo_x(), self.root.winfo_y()
+                dw = self.root.winfo_width()
+                x = dx - W - gap
+                if x < edge:
+                    x = dx + dw + gap
+                x = min(max(edge, x), max(edge, sw - W - edge))
+                y = min(max(edge, dy), max(edge, sh - H - edge))
+            win.geometry(f"{W}x{H}+{x}+{y}")
         except Exception:
             pass
 
     def _ensure_hotkey(self):
         """Register the suite hotkey; self-heal on a timer (backlog #5).
 
-        Registration is marshalled to the tray (owner) thread -- a
+        Registration is marshalled to the native host (owner) thread -- a
         direct call from here fails with 1408. Retries until registered;
         silent while taken (no log spam); logs the grab once it lands.
         """
         if getattr(self, "_hotkey_on", False):
             return
         try:
-            if state.tray_host is None or not getattr(state.tray_host, "hwnd", None):
+            host = state.hotkey_host
+            if host is None or not getattr(host, "hwnd", None):
                 return
             hk = core.canonical_hotkey(
                 core.get_settings(core.load_manifest()).get(
@@ -276,7 +308,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             if not parsed:
                 return
             mods, vk = parsed
-            if register_hotkey(state.tray_host.hwnd, 1, mods, vk):
+            if register_hotkey(host.hwnd, 1, mods, vk):
                 self._hotkey_on = True
                 state.log(f"global hotkey {hk} registered")
                 self.say(f"hotkey {hk} on")
@@ -422,6 +454,10 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         in the save handler.
         """
         was = self.visible
+        was_launcher = bool(getattr(self, "launcher", None)
+                            and self.launcher.visible)
+        if self.launcher is not None:
+            self._launcher_position = self.launcher.position()
         self._gen = getattr(self, "_gen", 0) + 1  # retire the old _poll
         try:
             self._close_popups()
@@ -434,6 +470,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             pass
         icons.clear_cache()  # images belong to the dead root + old palette
         self.root = None
+        self.launcher = None
         self.status_var = None
         self.list_frame = None
         self._canvas = None
@@ -446,6 +483,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self._last_sig = None
         self.visible = False
         self.ensure()  # re-applies the palette + schedules a fresh _poll
+        if was_launcher:
+            self.show_launcher()
         if was:
             self.show()
 

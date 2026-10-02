@@ -55,6 +55,25 @@ class Tests(unittest.TestCase):
         tray.on_tray_event.assert_called_once_with(
             100, launchdeck_tray.WM_LBUTTONUP)
 
+    def test_hidden_hotkey_host_has_no_taskbar_icon_or_reopen_menu(self):
+        from deck.ui import hotkey, state
+        host = hotkey.HotkeyHost()
+        self.assertFalse(host.show_icon)
+        with mock.patch.object(state, "actions") as actions:
+            host.on_hotkey(1)
+        # A hidden host still routes Alt+W to the single Tk action consumer.
+        actions.put.assert_called_once_with("toggle_ui")
+        host.hwnd = 1
+        host.taskbar_created = 0xC123
+        host._add_icon = mock.Mock()
+        old = launchdeck_tray._INSTANCE
+        try:
+            launchdeck_tray._INSTANCE = host
+            launchdeck_tray._wndproc(1, host.taskbar_created, 0, 0)
+        finally:
+            launchdeck_tray._INSTANCE = old
+        host._add_icon.assert_not_called()
+
 
     def test_dispatcher_executes_one_handler(self):
         from deck.ui import app, state

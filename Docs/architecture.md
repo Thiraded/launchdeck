@@ -13,11 +13,12 @@ unchanged):
 
 | Module | Role |
 |--------|------|
-| `main.py` | `main()`: instance guard, tray thread, Dashboard, mainloop. |
+| `main.py` | `main()`: instance guard, hidden hotkey host, desktop button, Dashboard, mainloop. |
 | `app.py` | `Dashboard`: window lifecycle, popups, `_poll` action pump, `_run_async`. Composed of the mixins below. |
 | `worklist.py` / `actions.py` / `editors.py` / `logviewer.py` | Mixins: rows (build + in-place update), row actions, dialogs, log tail. |
-| `tray.py` | `WorkTray` (tray thread). Tk work is queued to `state.actions`. |
-| `state.py` | Shared mutable state + work ops: `log`, `actions` queue, `_running` (monitor thread), `tray_host`, `toggle_start_stop`. |
+| `launcher.py` | `DesktopLauncher`: draggable, always-on-top lightning button; reports moves to the dashboard for popup anchoring. |
+| `hotkey.py` | `HotkeyHost`: hidden native message window for global-hotkey ownership. Tk work is queued to `state.actions`. |
+| `state.py` | Shared mutable state + work ops: `log`, `actions` queue, `_running` (monitor thread), `hotkey_host`, `toggle_start_stop`. |
 | `theme.py` | Palettes + fonts. `TH_*` are rebound on theme switch: read as `theme.TH_X`, never `from theme import`. |
 | `widgets.py` / `viewmodel.py` | Themed Tk helpers / pure row+form helpers. |
 | `icons.py` / `dpi.py` | SVG icon renderer (below) / DPI awareness. |
@@ -140,4 +141,8 @@ are group members never render standalone.
 ## UI entry point
 
 `launchdeck.bat` starts `launchdeck_dashboard.py` with `pythonw.exe`.
-The dashboard opens on launch and keeps its tray icon available.
+Launch shows the floating desktop button. Clicking it opens the dashboard
+beside the button; clicking it again closes the dashboard and every dashboard
+popup. Dragging the button while the dashboard is open moves the dashboard
+with it. The native hotkey host stays hidden and owns Alt+W registration, so
+no taskbar tray icon is needed.

@@ -1,12 +1,10 @@
-"""launchdeck_dashboard.py — launchdeck in the Windows system tray (notification area, bottom-right).
+"""launchdeck_dashboard.py — floating desktop button + Works dashboard.
 
-Click the tray icon -> popup dashboard (PowerToys Workspaces style):
-    [icon] label            (o) running / ( ) stopped   [Start/Log/Stop]
+The always-on-top lightning button opens the borderless dashboard. Drag the
+button to move it; the dashboard follows its position. Clicking the button
+again closes the dashboard and all child popups.
 
-  * tray icon lives at the taskbar's far right (notification area).
-  * left-click = open/close the dashboard popup near the tray.
-  * right-click = quick menu (dashboard + per-work Start/Stop/Log + Quit).
-  * dashboard has [+ New Task] + per-work edit/delete -> writes works.json.
+  * the dashboard has [+ New Task] + per-work edit/delete -> writes works.json.
   * ALL works are detached (no console): output goes to launchdeck_logs and the
     log button tails it live. Stop = kill tree.
 

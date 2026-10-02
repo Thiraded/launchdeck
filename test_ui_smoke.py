@@ -5,6 +5,7 @@ entry point that could touch the machine or works.json is mocked.
 Safe on a live machine (see Docs/verification.md).
 """
 import copy
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -47,7 +48,7 @@ class DashboardSmoke(unittest.TestCase):
             mock.patch.object(core, "launch_work", side_effect=AssertionError("launch")),
             mock.patch.object(core, "kill_work", side_effect=AssertionError("kill")),
             mock.patch.object(state, "_running", {"web"}),
-            mock.patch.object(state, "tray_host", None),
+            mock.patch.object(state, "hotkey_host", None),
         ]
         for p in patches:
             p.start()
@@ -131,6 +132,58 @@ class DashboardSmoke(unittest.TestCase):
             lp.return_value = dp.return_value = core.HERE / "does-not-exist.log"
             d.open_log_viewer(FAKE["works"][0])
             d.root.update_idletasks()
+
+    def test_desktop_launcher_click_toggles_and_drag_moves_anchor(self):
+        d = self.d
+        launcher = d.launcher
+        self.assertIsNotNone(launcher)
+        self.assertFalse(launcher.visible)
+        self.assertTrue(launcher.window.overrideredirect())
+        self.assertTrue(launcher.window.attributes("-topmost"))
+        toggle, moved = mock.Mock(), mock.Mock()
+        launcher.on_toggle, launcher.on_move = toggle, moved
+        press = SimpleNamespace(x_root=200, y_root=220)
+        launcher._on_press(press)
+        launcher._on_release(press)
+        toggle.assert_called_once_with()
+        moved.assert_not_called()
+
+        before = launcher.position()
+        launcher._on_press(press)
+        launcher._on_drag(SimpleNamespace(x_root=220, y_root=250))
+        launcher._on_release(SimpleNamespace(x_root=220, y_root=250))
+        self.assertEqual(launcher.position(), (before[0] + 20, before[1] + 30))
+        self.assertEqual(moved.call_count, 1)
+        self.assertEqual(toggle.call_count, 1)
+
+    def test_dashboard_geometry_tracks_desktop_launcher(self):
+        d = self.d
+        launcher = d.launcher
+        sw = launcher.window.winfo_screenwidth()
+        # Place the hidden button in the upper-left quadrant so the popup
+        # must align its left edge and open below the button.
+        launcher._set_position(sw // 4, 40, notify=False)
+        d._place_near_launcher()
+        geometry = d.root.geometry()
+        self.assertIn(f"+{launcher.position()[0]}+", geometry)
+
+    def test_launcher_click_closes_dashboard_and_all_tracked_popups(self):
+        d = self.d
+        first, _body = d._popup_shell("first")
+        second, _body2 = d._popup_shell("second")
+        d._track_popup(first)
+        d._track_popup(second)
+        d._log_wins["web"] = first
+        d.visible = True
+        d.launcher.on_toggle = d.toggle
+        click = SimpleNamespace(x_root=100, y_root=100)
+        d.launcher._on_press(click)
+        d.launcher._on_release(click)
+        self.assertFalse(d.visible)
+        self.assertEqual(d._popups, [])
+        self.assertEqual(d._log_wins, {})
+        self.assertFalse(first.winfo_exists())
+        self.assertFalse(second.winfo_exists())
 
 
 class IconRenderer(unittest.TestCase):

@@ -39,7 +39,7 @@ class LogViewerMixin:
             self.say(f"log path failed: {e}")
             return
         win, body = self._popup_shell(f"log: {label}")
-        self._place_near_tray(win, dpi.px(760), dpi.px(460))
+        self._place_near_launcher(win, dpi.px(760), dpi.px(460))
         self._track_popup(win)
         self._log_wins[wid] = win
         txt = tk.Text(body, wrap="none", bg="#1e1e1e", fg="#d4d4d4",

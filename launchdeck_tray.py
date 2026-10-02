@@ -440,15 +440,16 @@ def _wndproc(hwnd, msg, wparam, lparam):
             return 0
         return 0
     if msg == inst.taskbar_created:
-        try:
-            if inst._add_icon():
-                inst.available = True
-                inst._on_taskbar_created()
-            else:
+        if getattr(inst, "show_icon", True):
+            try:
+                if inst._add_icon():
+                    inst.available = True
+                    inst._on_taskbar_created()
+                else:
+                    inst.available = False
+            except Exception as e:
                 inst.available = False
-        except Exception as e:
-            inst.available = False
-            _tray_log(f"[taskbar] rebuild failed: {e}")
+                _tray_log(f"[taskbar] rebuild failed: {e}")
         return 0
     if msg == WM_APP_SHUTDOWN:
         inst._shutdown_on_tray_thread()
@@ -466,7 +467,7 @@ def _wndproc(hwnd, msg, wparam, lparam):
                 _tray_log(f"[wndproc] on_hotkey failed: {e}")
         return 0
     if msg == WM_APP_HOTKEY_REG:
-        # Runs ON the tray thread (the window's owner): RegisterHotKey
+        # Runs ON the native host thread (the window's owner): RegisterHotKey
         # from any other thread fails with 1408, so all registration
         # is marshalled here via SendMessageTimeout. lParam packs
         # mods in HIWORD, vk in LOWORD. Returns HOTKEY_OK on success,
@@ -558,9 +559,13 @@ def unregister_hotkey(hwnd, hid):
 
 
 class TrayIcon:
-    def __init__(self, tip="LaunchDeck", color=(0, 120, 215)):
+    def __init__(self, tip="LaunchDeck", color=(0, 120, 215),
+                 show_icon=True):
         self.tip = (tip or "LaunchDeck")[:127]
         self.color = color
+        # A hidden host keeps the native owner thread needed by RegisterHotKey
+        # without adding a second, taskbar-based way to open the dashboard.
+        self.show_icon = bool(show_icon)
         self.msg = WM_USER + 1
         self.hwnd = None
         self.hinst = None
@@ -653,13 +658,14 @@ class TrayIcon:
                 return
             _tray_log(f"[_run] hwnd={self.hwnd!r}")
 
-            self.icon = make_square_icon(self.color)
-            if not self.icon or not self._add_icon():
-                self.last_error = self.last_error or "failed to add tray icon"
-                return
+            if self.show_icon:
+                self.icon = make_square_icon(self.color)
+                if not self.icon or not self._add_icon():
+                    self.last_error = self.last_error or "failed to add tray icon"
+                    return
             self.available = True
             self._alive = True
-            _tray_log("[_run] icon added — available=True")
+            _tray_log("[_run] host ready — available=True")
 
             msg = MSG()
             while user32.GetMessageW(ctypes.byref(msg), NULL, 0, 0) > 0:
@@ -680,7 +686,7 @@ class TrayIcon:
         """Subclass hook to rebuild secondary icons after Explorer restarts."""
 
     def _before_tray_shutdown(self):
-        """Subclass hook executed on the tray thread before native cleanup."""
+        """Subclass hook executed on the native host thread before cleanup."""
 
     def _cleanup_native(self):
         """Release native resources once, on the native window owner thread."""
@@ -692,7 +698,7 @@ class TrayIcon:
         except Exception as e:
             _tray_log(f"[cleanup] hook failed: {e}")
         try:
-            if self.hwnd:
+            if self.hwnd and self.show_icon:
                 self._remove_icon()
         except Exception as e:
             _tray_log(f"[cleanup] remove icon failed: {e}")
@@ -724,7 +730,7 @@ class TrayIcon:
         user32.PostQuitMessage(0)
 
     def stop(self, timeout=3.0):
-        """Ask the tray thread to tear down its own native window."""
+        """Ask the owner thread to tear down its own native window."""
         thread = self._thread
         if thread and thread.is_alive() and self.hwnd:
             posted = False
@@ -740,7 +746,7 @@ class TrayIcon:
             if threading.current_thread() is not thread:
                 thread.join(timeout)
                 if thread.is_alive():
-                    _tray_log("[stop] tray thread did not exit before timeout")
+                    _tray_log("[stop] native host thread did not exit before timeout")
                     return False
             elif thread.is_alive():
                 return False
@@ -776,7 +782,7 @@ class TrayIcon:
 
     def set_tooltip(self, text):
         self.tip = (text or "LaunchDeck")[:127]
-        if not (self.hwnd and self._alive):
+        if not (self.show_icon and self.hwnd and self._alive):
             return
         nid = NOTIFYICONDATA()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
@@ -788,7 +794,7 @@ class TrayIcon:
 
     def notify(self, title, text, info_flags=NIIF_INFO):
         """Show a balloon tooltip. info_flags: NIIF_INFO/WARNING/ERROR."""
-        if not (self.hwnd and self._alive):
+        if not (self.show_icon and self.hwnd and self._alive):
             return
         nid = NOTIFYICONDATA()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)

@@ -156,8 +156,8 @@ class EditorsMixin:
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
-                                  min(win.winfo_reqheight(), sh - 120))
+            self._place_near_launcher(win, min(win.winfo_reqwidth(), sw - 32),
+                                      min(win.winfo_reqheight(), sh - 120))
         except Exception:
             pass
         self._track_popup(win)
@@ -211,8 +211,9 @@ class EditorsMixin:
                 messagebox.showerror("Save failed", str(e))
                 return
             try:
-                if state.tray_host is not None and getattr(state.tray_host, "hwnd", None):
-                    unregister_hotkey(state.tray_host.hwnd, 1)
+                host = state.hotkey_host
+                if host is not None and getattr(host, "hwnd", None):
+                    unregister_hotkey(host.hwnd, 1)
             except Exception:
                 pass
             self._hotkey_on = False
@@ -235,8 +236,8 @@ class EditorsMixin:
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
-                                  min(win.winfo_reqheight(), sh - 120))
+            self._place_near_launcher(win, min(win.winfo_reqwidth(), sw - 32),
+                                      min(win.winfo_reqheight(), sh - 120))
         except Exception:
             pass
         self._track_popup(win)
@@ -471,8 +472,8 @@ class EditorsMixin:
         try:
             win.update_idletasks()
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-            self._place_near_tray(win, min(win.winfo_reqwidth(), sw - 32),
-                                  min(win.winfo_reqheight(), sh - 120))
+            self._place_near_launcher(win, min(win.winfo_reqwidth(), sw - 32),
+                                      min(win.winfo_reqheight(), sh - 120))
         except Exception:
             pass
         self._track_popup(win)

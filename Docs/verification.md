@@ -10,9 +10,11 @@
 - Headless key-sequence simulation: Space -> `[X]`, Enter ->
   kill/launch, Esc -> quit.
 - **Manual smoke on Windows** (standing gate, still open): run `launchdeck`
-  or click the Desktop shortcut; confirm the dashboard and tray icon open.
-  Start/Stop one selected work in the dashboard. Do NOT claim DONE until a
-  human confirms this in the real window.
+  or click the Desktop shortcut; confirm the lightning button appears, drag it,
+  click to open the dashboard beside it, and click again to close the dashboard
+  and every child popup. Confirm Alt+W still toggles the dashboard. Start/Stop
+  one selected work in the dashboard. Do NOT claim DONE until a human confirms
+  this in the real window.
 - Kill covers the `cmd` host AND child `node.exe` (no zombie windows).
 - The deck never hangs the host: single shared scan, background `[-]`
   monitor (2s), no unbounded loops in the key path.

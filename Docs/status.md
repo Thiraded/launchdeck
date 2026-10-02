@@ -1,5 +1,18 @@
 # Status — current state and open gates (updated 2026-10-02)
 
+## 2026-10-02 — desktop launcher source update (not live yet)
+
+- Source now starts with a draggable, always-on-top lightning button. It opens
+  the dashboard beside itself; clicking it again hides the dashboard and all
+  child popups. The taskbar tray icon is removed from the new launch path; a
+  hidden native host still owns Alt+W.
+- The running deck processes listed below are still on the old build. They were
+  not restarted during this change, so the floating button has not had a live
+  Windows smoke check yet.
+- Validation: `py_compile` passed for the changed Python modules; the guarded
+  safe suite passed all 52 tests. The icon preview was checked at its 56px
+  render size.
+
 ## 2026-10-02 — single UI and shortcuts
 
 - `launchdeck` now starts the dashboard UI; the terminal frontend was removed.
@@ -43,8 +56,8 @@ Next steps + live checklist: `Docs/plan.md` sections 6 and 9.
   steps path after the setlocal fix; proves batless launch end-to-end).
 - hamster-server: state unknown since the morning full-close test --
   check the dashboard dot before touching :3000 consumers.
-- deck (tray): RUNNING, but on pre-marshal code -- needs ONE more restart
-  to load the hotkey-marshal + borderless + popup-class build.
+- deck dashboard: RUNNING on the old tray build; source changes are not loaded
+  until that instance exits and the updated launcher starts.
 - hamsterquest / mr-* / omniroute-* / gpt-mcp: stopped (never Started
   on the steps path yet -- each first Start is still unverified live).
 
@@ -66,8 +79,8 @@ Next steps + live checklist: `Docs/plan.md` sections 6 and 9.
 
 ## Open gates (need a human at the keyboard)
 
-1. Restart the deck -> Alt+W must toggle the dashboard (then the agent
-   marshal-probes the live tray window to confirm end-to-end).
+1. After the existing deck instance exits, start the updated deck and verify
+   the floating button, drag-and-follow popup, click-again dismissal, and Alt+W.
 2. Start each stopped work once from the dashboard (server, quest,
    unity, vscode, cli, web, mcp) -- first live boot on the steps path.
 3. The old hide-quality and full-close gates are PRE-detached doctrine --

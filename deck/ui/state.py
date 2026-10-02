@@ -1,6 +1,5 @@
-"""Process-wide deck state: log file, settings reads, live running
-set (monitor thread), the tk action queue, and work ops shared by
-the dashboard and the tray menu."""
+"""Process-wide deck state: settings, live running set, the Tk action
+queue, and work ops shared by the dashboard and native host."""
 from pathlib import Path
 import queue
 import threading
@@ -13,8 +12,6 @@ from deck.ui import theme
 HERE = Path(__file__).resolve().parents[2]  # repo root
 
 LOG = HERE / "launchdeck_logs" / "launchdeck-tray.log"
-
-APP_TIP = "Works"
 
 def collapsed_groups():
     """Set of collapsed group ids (manifest settings.collapsed)."""
@@ -54,22 +51,19 @@ _running: set = set()
 
 _lock = threading.Lock()
 
-_prev_running: set = set()
-
-actions = queue.Queue()  # tray thread -> tk thread requests ("toggle_ui", ...)
+actions = queue.Queue()  # native host -> Tk thread requests ("toggle_ui", ...)
 
 # Woken by the tk thread after every action so the monitor re-scans NOW
 # instead of at the next 3s tick (stale cache + refresh = white flash).
 _rescan = threading.Event()
 
-tray_host = None  # the live WorkTray, set by main()
+hotkey_host = None  # hidden native host owning the global hotkey window
 
 def running_snapshot():
     with _lock:
         return set(_running)
 
-def monitor_loop(tray, notify_new=True):
-    global _prev_running
+def monitor_loop():
     while True:
         try:
             manifest = core.load_manifest()
@@ -81,20 +75,6 @@ def monitor_loop(tray, notify_new=True):
             with _lock:
                 global _running
                 _running = s
-            new = s - _prev_running
-            if new and notify_new:
-                try:
-                    names = [w.get("label", wid) for w in manifest["works"]
-                             if w.get("id") in new]
-                    tray.notify("Work running", ", ".join(names)[:200])
-                except Exception:
-                    pass
-            n_total = len(manifest.get("works", []))
-            try:
-                tray.set_tooltip(f"{APP_TIP} — {len(s)}/{n_total} running")
-            except Exception:
-                pass
-            _prev_running = s
         except Exception as e:
             log(f"monitor: {e}")
         _rescan.wait(3.0)  # periodic tick, or instant when an action lands

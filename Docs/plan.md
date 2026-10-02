@@ -27,8 +27,9 @@
 - LaunchDeck = ตัวเปิด/ปิด dev server และแอปของ user บน Windows ขับด้วย
   `works.json` (groups + works) repo อยู่ที่ `D:\launchdeck`, remote
   `Thiraded/launchdeck@main`
-- มี UI เดียว: คำสั่ง `launchdeck` เรียก `launchdeck.bat` ซึ่งเปิด dashboard
-  (`launchdeck_dashboard.py` → `deck/ui/`, รันด้วย pythonw, hotkey Alt+W)
+- มี UI เดียว: คำสั่ง `launchdeck` เรียก `launchdeck.bat` ซึ่งแสดงปุ่มสายฟ้า
+  ลอยบน desktop; คลิกแล้วเปิด dashboard (`launchdeck_dashboard.py` → `deck/ui/`,
+  รันด้วย pythonw, hotkey Alt+W)
 - ทุก work รันแบบ `"run": "detached"` = ไม่มีหน้าต่าง output ลง
   `launchdeck_logs/<id>.log` แล้ว log viewer ใน dashboard tail สีให้
 - user: พูดไทย เป็นเจ้าของเครื่อง ใช้งานจริงทุกวัน (work รันค้างอยู่ตลอด)
@@ -105,14 +106,15 @@
 
 | ไฟล์ | บรรทัด | หน้าที่ |
 |------|------:|--------|
-| `main.py` | ~45 | `main()`: `--self-test`, mutex, `dpi.enable()`, WorkTray, monitor thread, Dashboard |
-| `app.py` | 531 | `Dashboard` (mixins ด้านล่าง), `_poll` 250ms, `_handle_action`, `_rebuild`, `_place_near_tray` |
+| `main.py` | 62 | `main()`: `--self-test`, mutex, `dpi.enable()`, HotkeyHost, monitor thread, Dashboard |
+| `app.py` | 572 | `Dashboard` (mixins ด้านล่าง), `_poll` 250ms, `_handle_action`, `_rebuild`, `_place_near_launcher` |
 | `worklist.py` | 319 | สร้างแถว/อัปเดตแถวในที่ (ไม่ rebuild ทั้งหน้า) |
 | `actions.py` | 265 | `_act_run`, `_act_all`, restart, delete, `_act_async` + `_pending` |
 | `editors.py` | 479 | task/group/settings editor (popup class เดียวกัน) |
 | `logviewer.py` | 113 | tail log 1s, สี ANSI, URL คลิกได้ |
-| `tray.py` | 99 | `WorkTray` + เมนูคลิกขวา (Win32 menu ยังใช้ emoji dot) |
-| `state.py` | 131 | `log`, `actions` queue, `_running`, `monitor_loop` (3s), `toggle_start_stop` |
+| `launcher.py` | 112 | `DesktopLauncher`: draggable always-on-top lightning button + popup anchor |
+| `hotkey.py` | 14 | `HotkeyHost`: iconless native host สำหรับ owner-thread ของ RegisterHotKey |
+| `state.py` | 111 | `log`, `actions` queue, `_running`, `monitor_loop` (3s), `toggle_start_stop` |
 | `theme.py` | 78 | palette, `ICON_CHOICES` (17 ชื่อ), `EMOJI_ICON` (emoji เก่า → ชื่อ) |
 | `widgets.py` | 223 | `th_button(icon=)`, `th_circle_btn` (Label+image), `icon_label` |
 | `icons.py` | 507 | rasterizer SVG pure-python → PNG → `tk.PhotoImage` (cache) |
@@ -129,11 +131,11 @@ rotate-cw file-text chevron-down/right/up x settings plus folder-plus zap ...
 
 ### 4.3 อื่นๆ
 
-- `launchdeck_tray.py` (1,009): primitive tray/hotkey ด้วย ctypes (reference)
-  `register_hotkey` marshal ไป tray thread ด้วย SendMessageTimeout 2s
+- `launchdeck_tray.py` (1,009): Win32 host/hotkey primitives ด้วย ctypes
+  `register_hotkey` marshal ไป hidden host thread ด้วย SendMessageTimeout 2s
 - `launchdeck-helper/` + `launchdeck-helper.exe` 1.1.0: `scan` (exit 1 เมื่อ snapshot พัง), `kill`
   (`dead`/`denied` แยกกัน)
-- `test_*.py`: kill_safety (~33), tray_foundation (~10), ui_smoke (~9),
+- `test_*.py`: kill_safety (32), tray_foundation (9), ui_smoke (11),
   jobs (4, opt-in), launchdeck_core (spawn จริง, ห้ามรันถ้าไม่ได้รับอนุญาต)
 
 ### 4.4 works.json ของ user (10 works)
@@ -253,7 +255,7 @@ mr-unity, mr-vscode, gpt-mcp ใช้ `D:\Midnight-Rider` ร่วมกัน
 - N4 registry entry ของ work ที่ตายเองไม่ถูกลบ (เช่น hamster-server จาก 09-27) → J5
 - N5 `poll_launch`, `registry_running`, `live_running`, `STABLE_MAX_SECONDS`,
   `SETTLED` ไม่มีใครเรียกนอก core แล้ว (ตรวจ grep 2026-10-01) → D1
-- N6 เมนูคลิกขวา tray ยังใช้ emoji 🟢/⚪ (Win32 menu ไม่รองรับ image ง่ายๆ) → U3
+- N6 เมนูคลิกขวา tray ใช้ emoji 🟢/⚪; retired พร้อม taskbar tray UI เมื่อเปลี่ยนเป็น desktop button (2026-10-02)
 - N7 `jobs.stop` ส่ง CTRL_BREAK โดยใช้ registry pid เป็น group id ถ้า registry
   ไม่มี pid (work ถูก Start โดย deck อีกตัว) จะใช้ member แรก ซึ่งอาจไม่ใช่ group
   leader → graceful ไม่เกิด แต่ force kill ยังทำงาน → J4
@@ -448,9 +450,6 @@ launchdeckd (pythonw, mutex = ตัวเดียว)
       geometry/ไอคอน ต้องแน่ใจว่าทุกขนาดคงที่ผ่าน `dpi.px`
       (`grep -n "width=\|height=\|padx=\|pady=" deck/ui/*.py`)
 - [ ] U2 status pill ในแถว: running / starting… / stopping… / external (M2) / failed
-- [ ] U3 เมนูคลิกขวา tray: emoji 🟢⚪ (N6) ทางเลือก: `SetMenuItemBitmaps` ด้วย
-      HBITMAP ที่สร้างจาก `icons.compose()` (RGBA → DIB section 32bpp) ทำได้ด้วย ctypes
-      หรือเปลี่ยนเป็นข้อความ "● running" ธรรมดา แนะนำแบบหลัง (ง่าย เสี่ยงน้อย)
 - [ ] U4 ปุ่ม row บาง (trash/pencil/restart/log) โผล่เฉพาะ hover (เคยเสนอ ยังไม่ทำ
       ตอนนี้แสดงเป็น ghost ตลอด) ต้องดูว่า Tk hover ทั้งแถวไม่กระพริบ
 - [ ] U5 ไอคอนเพิ่มตามที่ user ขอ: เพิ่ม svg ใน `assets/icons/` (viewBox 24,
