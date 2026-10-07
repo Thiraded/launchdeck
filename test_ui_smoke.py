@@ -254,6 +254,16 @@ class DashboardSmoke(unittest.TestCase):
         d.root.update()
         self.assertFalse(ov.window.winfo_exists())
 
+        # 4. Test responsive overlay with short and long texts
+        ov_short = d.show_away_overlay("7-11")
+        self.assertTrue(ov_short.window.winfo_exists())
+        ov_short.dismiss()
+
+        ov_long = d.show_away_overlay("ฟังยุ ร้องเรียกเหมียวๆเดี๋ยวก็มา นั่งรอสักครู่")
+        self.assertTrue(ov_long.window.winfo_exists())
+        ov_long.dismiss()
+        d.root.update()
+
 
 
 

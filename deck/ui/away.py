@@ -98,14 +98,32 @@ class AwayOverlay:
         card_outer = tk.Frame(wrapper, bg="#2A3348", padx=1, pady=1)
         card_outer.place(x=rel_x, y=rel_y, anchor="center")
 
-        card = tk.Frame(card_outer, bg="#0D111A", padx=dpi.px(44), pady=dpi.px(32))
+        msg_len = len(self.message)
+        if msg_len <= 8:
+            font_size = 32
+            wrap_w = dpi.px(480)
+            pad_x = dpi.px(56)
+        elif msg_len <= 20:
+            font_size = 28
+            wrap_w = dpi.px(580)
+            pad_x = dpi.px(48)
+        elif msg_len <= 45:
+            font_size = 22
+            wrap_w = dpi.px(680)
+            pad_x = dpi.px(40)
+        else:
+            font_size = 18
+            wrap_w = dpi.px(780)
+            pad_x = dpi.px(32)
+
+        card = tk.Frame(card_outer, bg="#0D111A", padx=pad_x, pady=dpi.px(32))
         card.pack(fill="both", expand=True)
 
         accent_bar = tk.Frame(card, bg=theme.TH_ACCENT, height=dpi.px(3))
         accent_bar.pack(fill="x", pady=(0, dpi.px(18)))
 
         now_time = time.strftime("%H:%M")
-        badge_text = f"🕒 AWAY • ไม่อยู่ที่โต๊ะ  (เวลา {now_time} น.)"
+        badge_text = f"🕒 AFK  (เวลา {now_time} น.)"
         lbl_badge = tk.Label(
             card, text=badge_text,
             font=("Segoe UI", 11, "bold"),
@@ -115,19 +133,19 @@ class AwayOverlay:
 
         lbl_msg = tk.Label(
             card, text=self.message,
-            font=("Segoe UI", 24, "bold"),
+            font=("Segoe UI", font_size, "bold"),
             bg="#0D111A", fg="#FFFFFF",
             justify="center",
-            wraplength=dpi.px(680),
+            wraplength=wrap_w,
         )
         lbl_msg.pack(padx=dpi.px(12), pady=(0, dpi.px(22)))
 
         sep = tk.Frame(card, bg="#1E2536", height=1)
         sep.pack(fill="x", pady=(0, dpi.px(14)))
 
-        hint_text = "💡 คลิกที่ใดก็ได้ หรือกดแป้นพิมพ์ใดๆ เพื่อกลับมาใช้งาน  (Click or press any key to dismiss)"
+        
         lbl_hint = tk.Label(
-            card, text=hint_text,
+            card,
             font=("Segoe UI", 9),
             bg="#0D111A", fg="#7A8699",
         )
@@ -200,8 +218,8 @@ def open_away_prompt(dashboard):
     """Open the dialog prompting the user to type an away message."""
     win, body = dashboard._popup_shell("Away Note")
 
-    preset_frame = tk.Frame(body, bg=theme.TH_BG)
-    preset_frame.pack(fill="x", padx=4, pady=(0, 8))
+    preset_box = tk.Frame(body, bg=theme.TH_BG)
+    preset_box.pack(fill="x", padx=4, pady=(0, 8))
 
     presets = [
         "cooking",
@@ -225,20 +243,63 @@ def open_away_prompt(dashboard):
     )
     txt.pack(fill="x", padx=4, pady=(0, 10))
 
-    def _apply_preset(val):
-        txt.delete("1.0", "end")
-        txt.insert("1.0", val)
+    def _append_preset(val):
+        try:
+            if txt.tag_ranges("sel"):
+                txt.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+
+        cur_text = txt.get("1.0", "end-1c")
+        if cur_text in ("Away from keyboard", "ไม่อยู่ที่โต๊ะชั่วคราว (Away from keyboard)"):
+            txt.delete("1.0", "end")
+            cur_text = ""
+
+        if not cur_text.strip():
+            txt.insert("1.0", val)
+            txt.mark_set(tk.INSERT, f"1.0+{len(val)}c")
+        else:
+            try:
+                insert_idx = txt.index(tk.INSERT)
+            except Exception:
+                insert_idx = "end-1c"
+
+            try:
+                prev_char = txt.get(f"{insert_idx}-1c", insert_idx)
+            except Exception:
+                prev_char = " "
+
+            prefix = " " if prev_char and not prev_char.isspace() else ""
+            txt.insert(insert_idx, prefix + val)
+            txt.mark_set(tk.INSERT, f"{insert_idx}+{len(prefix + val)}c")
+
+        txt.see(tk.INSERT)
         txt.focus_set()
 
-    for p in presets:
+    # Sort presets: short chips first by length, then longer phrases
+    sorted_presets = sorted(presets, key=lambda s: (len(s) > 16, len(s), s))
+
+    max_row_chars = 34
+    current_row = tk.Frame(preset_box, bg=theme.TH_BG)
+    current_row.pack(fill="x", pady=(0, 4))
+    char_count = 0
+
+    for p in sorted_presets:
+        item_len = len(p) + 4
+        if char_count > 0 and (char_count + item_len > max_row_chars):
+            current_row = tk.Frame(preset_box, bg=theme.TH_BG)
+            current_row.pack(fill="x", pady=(0, 4))
+            char_count = 0
+
         btn = th_button(
-            preset_frame,
-            text=p,
-            command=lambda v=p: _apply_preset(v),
+            current_row,
+            text=f"+ {p}",
+            command=lambda v=p: _append_preset(v),
             style="ghost",
         )
-        btn.configure(font=("Segoe UI", 8))
+        btn.configure(font=("Segoe UI", 8), cursor="hand2")
         btn.pack(side="left", padx=(0, 4))
+        char_count += item_len
 
     last_msg = getattr(dashboard, "_last_away_msg", "")
     if not last_msg:
@@ -265,6 +326,14 @@ def open_away_prompt(dashboard):
         width=8,
         style="ghost",
     ).pack(side="left")
+
+    th_button(
+        btn_bar,
+        text="Clear",
+        command=lambda: (txt.delete("1.0", "end"), txt.focus_set()),
+        width=6,
+        style="ghost",
+    ).pack(side="left", padx=(6, 0))
 
     th_button(
         btn_bar,

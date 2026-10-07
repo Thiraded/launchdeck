@@ -7,12 +7,14 @@
 - Added launcher VS Code shortcut (`open_vscode` in `Dashboard`), launching VS Code for `D:\launchdeck` (`core.HERE`)
   via detected `Code.exe` / `code.cmd` cleanly detached without console flicker.
 - Implemented Away Message feature (`deck/ui/away.py`):
-  - Interactive prompt dialog (`open_away_prompt`) with quick preset buttons ("☕ พักเบรก 15 นาที",
-    "🍱 ไปทานข้าวกลางวัน", "🚶 ออกไปข้างนอกสักครู่", "💤 AFK / ไม่อยู่ที่โต๊ะ") and custom text entry.
+  - Interactive prompt dialog (`open_away_prompt`) with multi-row wrapping flow layout for preset chips,
+    ordered by length hierarchy (short action tags first, then longer status phrases).
+  - Shortcut click appends words dynamically with smart space padding instead of overwriting the full text,
+    auto-clearing the default fallback on first tag, and includes a handy "Clear" reset button.
   - Fullscreen darkened overlay (`AwayOverlay`) covering multi-monitor virtual screen (`SM_CXVIRTUALSCREEN`)
     with smooth animated fade-in / fade-out (`attributes("-alpha")` up to 0.92) and dark `#000000` scrim.
-  - Centered high-legibility presentation card displaying formatted away message, leave time badge, and
-    dismiss guidance.
+  - Adaptive presentation card sizing and dynamic typography scaling (18pt-32pt bold, dynamic wraplength)
+    adapting seamlessly to any message length (from 4-char words like "7-11" to full multi-line notes).
   - Dismisses seamlessly upon mouse click or any keypress (`Escape`, etc.).
 - Validation: 60 tests pass across the test suite (`test_ui_smoke.py`, `test_tray_foundation.py`,
   `test_kill_safety.py`). `test_no_local_shadows_a_module` passed clean.
