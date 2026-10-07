@@ -1,4 +1,55 @@
-# Status — current state and open gates (updated 2026-10-02)
+# Status — current state and open gates (updated 2026-10-08)
+
+## 2026-10-08 — launcher context menu and away message overlay
+
+- Added desktop floating button right-click context menu (`DesktopLauncher` `<ButtonPress-3>` / `<ButtonRelease-3>`),
+  triggering options: "Away Note", "Dashboard", "VS Code", "Settings", and "Quit LaunchDeck".
+- Added launcher VS Code shortcut (`open_vscode` in `Dashboard`), launching VS Code for `D:\launchdeck` (`core.HERE`)
+  via detected `Code.exe` / `code.cmd` cleanly detached without console flicker.
+- Implemented Away Message feature (`deck/ui/away.py`):
+  - Interactive prompt dialog (`open_away_prompt`) with quick preset buttons ("☕ พักเบรก 15 นาที",
+    "🍱 ไปทานข้าวกลางวัน", "🚶 ออกไปข้างนอกสักครู่", "💤 AFK / ไม่อยู่ที่โต๊ะ") and custom text entry.
+  - Fullscreen darkened overlay (`AwayOverlay`) covering multi-monitor virtual screen (`SM_CXVIRTUALSCREEN`)
+    with smooth animated fade-in / fade-out (`attributes("-alpha")` up to 0.92) and dark `#000000` scrim.
+  - Centered high-legibility presentation card displaying formatted away message, leave time badge, and
+    dismiss guidance.
+  - Dismisses seamlessly upon mouse click or any keypress (`Escape`, etc.).
+- Validation: 60 tests pass across the test suite (`test_ui_smoke.py`, `test_tray_foundation.py`,
+  `test_kill_safety.py`). `test_no_local_shadows_a_module` passed clean.
+
+## 2026-10-06 — drag restoration and seamless topmost
+
+- Fixed desktop button drag and repositioning: removed redundant
+  `target_win.attributes("-topmost", True)` from `enforce_win32_topmost`.
+  Calling Tkinter's `attributes("-topmost", True)` during or immediately after
+  geometry updates invoked Tk's internal Windows wrapper sync, which clobbered
+  the pending coordinates and snapped the window back to its initial position.
+- Win32 `SetWindowPos` (`HWND_TOPMOST | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW`)
+  maintains true OS-level topmost without interfering with Tkinter's geometry.
+- Periodic 500ms topmost ticker is paused during active drag (`_press is None` guard),
+  and per-pixel drag calls now update geometry smoothly without redundant OS calls,
+  re-asserting topmost cleanly on release.
+- Validation: 53 tests pass (`test_ui_smoke.py`, `test_tray_foundation.py`,
+  `test_kill_safety.py`). Self-test passes clean. Live drag simulation verified.
+
+## 2026-10-05 — true always-on-top reinforcement and startup fix
+
+- Desktop launcher and Dashboard now reinforce Win32 `HWND_TOPMOST` via
+  `SetWindowPos` (`SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW`).
+  Root cause of missing topmost at startup: Tkinter recreates/realizes the OS
+  window wrapper during initial event mapping, so pre-mapping `attributes("-topmost", True)`
+  left the window below active apps until clicked once.
+- Continuous topmost enforcement: `DesktopLauncher` runs a 500ms ticker and
+  enforces topmost on enter/press/drag/release; `Dashboard` reinforces on `_poll`
+  while visible. Windows minimized or obscured by Win+D / Show Desktop are
+  restored non-intrusively via `SW_SHOWNOACTIVATE`.
+- Multi-monitor bounds: launcher position is clamped using virtual screen metrics
+  (`SM_XVIRTUALSCREEN`, `SM_CXVIRTUALSCREEN`, etc.) instead of primary monitor width.
+- Auto-dismiss guard: `_maybe_autodismiss` ignores clicks while the launcher button
+  is pressed, eliminating the toggle flicker race. Clean exit with `os._exit(0)`
+  prevents ghost processes from locking `Local\launchdeck-dashboard`.
+- Validation: 53 tests pass (`test_ui_smoke.py`, `test_tray_foundation.py`,
+  `test_kill_safety.py`). Self-test passes clean.
 
 ## 2026-10-02 — desktop launcher source update (not live yet)
 

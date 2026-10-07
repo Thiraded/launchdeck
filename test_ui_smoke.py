@@ -185,6 +185,78 @@ class DashboardSmoke(unittest.TestCase):
         self.assertFalse(first.winfo_exists())
         self.assertFalse(second.winfo_exists())
 
+    def test_topmost_enforcement(self):
+        d = self.d
+        launcher = d.launcher
+        self.assertIsNotNone(launcher)
+        launcher.enforce_topmost()
+        d._keep_root_topmost()
+        with mock.patch("deck.ui.launcher.enforce_win32_topmost") as m_launcher, \
+                mock.patch("deck.ui.app.enforce_win32_topmost") as m_app:
+            launcher.enforce_topmost()
+            m_launcher.assert_called_with(launcher.window)
+            d.visible = True
+            d._keep_root_topmost()
+            m_app.assert_called_with(d.root)
+
+    def test_launcher_right_click_context_menu(self):
+        d = self.d
+        launcher = d.launcher
+        self.assertIsNotNone(launcher)
+        cb = mock.Mock()
+        launcher.on_context_menu = cb
+        click_r = SimpleNamespace(x_root=150, y_root=180)
+        launcher._on_r_press(click_r)
+        launcher._on_r_release(click_r)
+        cb.assert_called_once_with(150, 180)
+
+        with mock.patch.object(d, "open_away_prompt") as m_prompt:
+            with mock.patch("tkinter.Menu.tk_popup"):
+                d.show_launcher_menu(100, 100)
+                # Ensure the menu was built and has items
+                self.assertIsNotNone(d._launcher_menu)
+                self.assertGreater(d._launcher_menu.index("end"), 0)
+                # Verify VS Code option exists in menu labels
+                labels = [d._launcher_menu.entrycget(i, "label")
+                          for i in range(d._launcher_menu.index("end") + 1)
+                          if d._launcher_menu.type(i) == "command"]
+                self.assertTrue(any("VS Code" in lbl for lbl in labels))
+
+    def test_open_vscode(self):
+        d = self.d
+        with mock.patch("subprocess.Popen") as m_popen:
+            d.open_vscode()
+            m_popen.assert_called_once()
+            args = m_popen.call_args[0][0]
+            self.assertIn(str(core.HERE), args)
+
+    def test_away_prompt_and_overlay_lifecycle(self):
+        d = self.d
+        from deck.ui import away
+        # 1. Open prompt dialog
+        prompt_win = d.open_away_prompt()
+        self.assertIsNotNone(prompt_win)
+        self.assertTrue(prompt_win.winfo_exists())
+        self.assertIn(prompt_win, d._popups)
+
+        # 2. Show away overlay directly with custom message
+        ov = d.show_away_overlay("ไปกินข้าว 30 นาที")
+        self.assertIsNotNone(ov)
+        self.assertEqual(ov.message, "ไปกินข้าว 30 นาที")
+        self.assertTrue(ov.window.winfo_exists())
+        self.assertTrue(ov.window.overrideredirect())
+        self.assertTrue(ov.window.attributes("-topmost"))
+
+        # 3. Dismiss overlay
+        ov.dismiss()
+        self.assertTrue(ov._closing)
+        # Flush after loop to complete fade out / destroy
+        d.root.update()
+        self.assertFalse(ov.window.winfo_exists())
+
+
+
+
 
 class IconRenderer(unittest.TestCase):
     def test_every_asset_renders_with_ink(self):

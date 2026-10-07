@@ -37,6 +37,12 @@ def main():
         dash = Dashboard()
         dash.ensure()
         dash.show_launcher()
+        try:
+            dash.root.update_idletasks()
+            if dash.launcher is not None:
+                dash.launcher.enforce_topmost()
+        except Exception:
+            pass
         dash._ensure_hotkey()
         state.log("deck ready (desktop button + dashboard ready)")
 
@@ -47,6 +53,7 @@ def main():
                 host.stop()
             except Exception:
                 pass
+            os._exit(0)
     except Exception:
         # pythonw has no console: without this, failures are invisible
         # and leave a ghost native host behind.

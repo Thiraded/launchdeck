@@ -2,6 +2,8 @@
 Feature areas are mixins (worklist / logviewer / editors / actions)."""
 import os
 import queue
+import shutil
+import subprocess
 import threading
 import time
 import tkinter as tk
@@ -9,8 +11,9 @@ import tkinter as tk
 from launchdeck_tray import register_hotkey
 from launchdeck_tray import unregister_hotkey
 import launchdeck_core as core
+from deck.ui import away
 from deck.ui import dpi, icons, state
-from deck.ui.launcher import DesktopLauncher
+from deck.ui.launcher import DesktopLauncher, enforce_win32_topmost
 from deck.ui import theme
 from deck.ui.actions import ActionsMixin
 from deck.ui.editors import EditorsMixin
@@ -24,6 +27,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self.root = None
         self.launcher = None
         self._launcher_position = None
+        self._away_overlay = None
+        self._launcher_menu = None
         self.status_var = None
         self.list_frame = None
         self._canvas = None
@@ -122,7 +127,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         r.bind("<FocusIn>", lambda _e: self._close_popups())
         self.root = r
         self.launcher = DesktopLauncher(
-            r, self.toggle, self._launcher_moved, self._launcher_position)
+            r, self.toggle, self._launcher_moved, self._launcher_position,
+            on_context_menu=self._on_launcher_context_menu)
         self.refresh()
         r.after(800, self._poll)
 
@@ -142,7 +148,18 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
             action[1]()  # worker-thread completion, marshalled onto Tk
         elif action == "refresh":
             self.refresh()
+        elif action == "away_prompt":
+            self.open_away_prompt()
+        elif isinstance(action, tuple) and len(action) == 2 and action[0] == "away":
+            self.show_away_overlay(action[1])
+        elif action == "vscode":
+            self.open_vscode()
         elif action == "quit":
+            try:
+                if getattr(self, "_away_overlay", None) is not None:
+                    self._away_overlay.dismiss()
+            except Exception:
+                pass
             try:
                 host = state.hotkey_host
                 if host is not None and getattr(host, "hwnd", None):
@@ -183,6 +200,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         # touch the cheap status line -- destroying + rebuilding the whole
         # list every 3s is what made it blink.
         if self.visible:
+            self._keep_root_topmost()
             try:
                 self._sweep_pending()  # confirm transitional marks in place
             except Exception:
@@ -208,6 +226,10 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
                 except Exception:
                     pass
 
+    def _keep_root_topmost(self):
+        if self.visible and self.root is not None:
+            enforce_win32_topmost(self.root)
+
     def toggle(self):
         self.ensure()
         self.show() if not self.visible else self.hide()
@@ -223,8 +245,10 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self._place_near_launcher()
         self.root.deiconify()
         try:
+            self.root.update_idletasks()
             self.root.lift()
             self.root.focus_force()
+            self._keep_root_topmost()
             self.launcher.show()
         except Exception:
             pass
@@ -242,6 +266,90 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self._launcher_position = self.launcher.position()
         if self.visible:
             self._place_near_launcher()
+
+    def _on_launcher_context_menu(self, x, y):
+        self.show_launcher_menu(x, y)
+
+    def show_launcher_menu(self, x, y):
+        menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            font=theme.TH_FONT,
+            bg=theme.TH_CARD,
+            fg=theme.TH_FG,
+            activebackground=theme.TH_ACCENT,
+            activeforeground="white",
+            bd=1,
+            relief="solid",
+        )
+        menu.add_command(
+            label="Away Note",
+            command=self.open_away_prompt,
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Dashboard",
+            command=self.show,
+        )
+        menu.add_command(
+            label="VS Code",
+            command=self.open_vscode,
+        )
+        menu.add_command(
+            label="Settings",
+            command=self.open_settings,
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="❌  Quit LaunchDeck",
+            command=lambda: state.actions.put("quit"),
+        )
+        self._launcher_menu = menu
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def open_vscode(self, target_path=None):
+        """Open the launcher workspace (or target_path) in VS Code."""
+        target_dir = str(target_path or core.HERE)
+        local_code = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe")
+        candidates = [
+            local_code,
+            os.path.expandvars(r"%PROGRAMFILES%\Microsoft VS Code\Code.exe"),
+            shutil.which("code.cmd"),
+            shutil.which("code"),
+        ]
+        chosen_exe = next((c for c in candidates if c and os.path.exists(c)), None)
+        try:
+            if chosen_exe and chosen_exe.lower().endswith(".exe"):
+                subprocess.Popen([chosen_exe, target_dir])
+            elif chosen_exe:
+                subprocess.Popen([chosen_exe, target_dir], shell=True,
+                                 creationflags=getattr(core, "_NO_WINDOW", 0))
+            else:
+                subprocess.Popen(["code", target_dir], shell=True,
+                                 creationflags=getattr(core, "_NO_WINDOW", 0))
+        except Exception as err:
+            state.log(f"failed to open VS Code: {err}")
+
+    def open_away_prompt(self):
+        return away.open_away_prompt(self)
+
+    def show_away_overlay(self, message):
+        if getattr(self, "_away_overlay", None) is not None:
+            try:
+                self._away_overlay.dismiss()
+            except Exception:
+                pass
+        anchor = self.launcher.position() if self.launcher else None
+        self._away_overlay = away.AwayOverlay(
+            self.root,
+            message,
+            anchor_pos=anchor,
+            on_close=lambda: setattr(self, "_away_overlay", None),
+        )
+        return self._away_overlay
 
     def hide(self):
         try:
@@ -324,6 +432,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         """
         try:
             if not self.visible or self.root is None:
+                return
+            if self.launcher is not None and getattr(self.launcher, "_press", None) is not None:
                 return
             try:
                 focus = self.root.focus_displayof()
