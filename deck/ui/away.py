@@ -123,7 +123,7 @@ class AwayOverlay:
         accent_bar.pack(fill="x", pady=(0, dpi.px(18)))
 
         now_time = time.strftime("%H:%M")
-        badge_text = f"🕒 AFK  (เวลา {now_time} น.)"
+        badge_text = f"AFK • {now_time}"
         lbl_badge = tk.Label(
             card, text=badge_text,
             font=("Segoe UI", 11, "bold"),
@@ -143,9 +143,9 @@ class AwayOverlay:
         sep = tk.Frame(card, bg="#1E2536", height=1)
         sep.pack(fill="x", pady=(0, dpi.px(14)))
 
-        
         lbl_hint = tk.Label(
             card,
+            text="Click or press Esc to dismiss",
             font=("Segoe UI", 9),
             bg="#0D111A", fg="#7A8699",
         )

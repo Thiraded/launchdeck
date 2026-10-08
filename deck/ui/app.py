@@ -14,6 +14,10 @@ import launchdeck_core as core
 from deck.ui import away
 from deck.ui import dpi, icons, state
 from deck.ui.launcher import DesktopLauncher, enforce_win32_topmost
+from deck.ui import localhost_mgr
+from deck.ui import quickjump
+from deck.ui import speeddial
+from deck.ui import stickynote
 from deck.ui import theme
 from deck.ui.actions import ActionsMixin
 from deck.ui.editors import EditorsMixin
@@ -29,6 +33,10 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self._launcher_position = None
         self._away_overlay = None
         self._launcher_menu = None
+        self._speed_dial = None
+        self._sticky_note = None
+        self._sticky_mgr = None
+        self._dash_pos = None
         self.status_var = None
         self.list_frame = None
         self._canvas = None
@@ -68,8 +76,11 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         tk.Frame(r, bg=theme.TH_ACCENT, height=2).pack(fill="x")
         top = tk.Frame(r, bg=theme.TH_BG)
         top.pack(fill="x", padx=14, pady=(12, 2))
-        tk.Label(top, text="Works", font=theme.TH_FONT_TITLE,
-                 bg=theme.TH_BG, fg=theme.TH_FG).pack(side="left")
+        lbl_works = tk.Label(top, text="Works", font=theme.TH_FONT_TITLE,
+                             bg=theme.TH_BG, fg=theme.TH_FG)
+        lbl_works.pack(side="left")
+        th_circle_btn(top, "x", command=self.hide,
+                      style="ghost").pack(side="right", padx=(6, 0))
         th_button(top, text="New", command=self.open_editor,
                   accent=True, icon="plus").pack(side="right")
         th_button(top, text="Group",
@@ -79,6 +90,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
                       style="ghost").pack(side="right", padx=(0, 4))
         th_circle_btn(top, "rotate-cw", command=self.refresh,
                       style="ghost").pack(side="right", padx=(0, 2))
+        self._draggable(r, top, lbl_works,
+                        on_move=lambda gx, gy: setattr(self, "_dash_pos", (gx, gy)))
         self.status_var = tk.StringVar(value="")
         tk.Label(r, textvariable=self.status_var, fg=theme.TH_DIM, bg=theme.TH_BG,
                  font=("Segoe UI", 9)).pack(fill="x", padx=14, pady=(0, 2))
@@ -118,23 +131,27 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
                   width=8, style="ghost").pack(side="right")
         r.withdraw()
         r.protocol("WM_DELETE_WINDOW", self.hide)
-        # Real-popup behavior (backlog #5): any focus leaving the whole
-        # dashboard tree schedules a dismiss check (editors/dialogs are
-        # child Toplevels, so focus inside them keeps us open).
-        r.bind("<FocusOut>", lambda _e: r.after(150, self._maybe_autodismiss))
-        # Clicking the dashboard kills open log viewers (they belong to
-        # it); clicking elsewhere kills everything via _maybe_autodismiss.
+        r.bind("<Escape>", lambda _e: self.hide())
+        # Clicking the dashboard kills open log viewers (they belong to it).
         r.bind("<FocusIn>", lambda _e: self._close_popups())
         self.root = r
         self.launcher = DesktopLauncher(
-            r, self.toggle, self._launcher_moved, self._launcher_position,
-            on_context_menu=self._on_launcher_context_menu)
+            r, self.toggle_speed_dial, self._launcher_moved, self._launcher_position,
+            on_context_menu=self.toggle_speed_dial)
         self.refresh()
         r.after(800, self._poll)
 
     def _handle_action(self, action):
         if action == "toggle_ui":
             self.toggle()
+        elif action == "speed_dial":
+            self.toggle_speed_dial()
+        elif action == "sticky_note":
+            self.toggle_sticky_note()
+        elif action == "projects":
+            self.open_projects()
+        elif action in ("localhost_mgr", "ports", "weblinks"):
+            self.open_localhost_manager()
         elif isinstance(action, tuple) and len(action) == 2 and action[0] == "log":
             w = state.work_by_id(action[1])
             if w is not None:
@@ -155,6 +172,21 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         elif action == "vscode":
             self.open_vscode()
         elif action == "quit":
+            try:
+                if getattr(self, "_sticky_mgr", None) is not None:
+                    self._sticky_mgr.save_all()
+            except Exception:
+                pass
+            try:
+                if getattr(self, "_sticky_note", None) is not None:
+                    self._sticky_note.close()
+            except Exception:
+                pass
+            try:
+                if getattr(self, "_speed_dial", None) is not None:
+                    self._speed_dial.close()
+            except Exception:
+                pass
             try:
                 if getattr(self, "_away_overlay", None) is not None:
                     self._away_overlay.dismiss()
@@ -242,7 +274,11 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         except Exception:
             pass
         self.refresh()
-        self._place_near_launcher()
+        if getattr(self, "_dash_pos", None) is None:
+            self._place_near_launcher()
+        else:
+            gx, gy = self._dash_pos
+            self.root.geometry(f"+{gx}+{gy}")
         self.root.deiconify()
         try:
             self.root.update_idletasks()
@@ -264,8 +300,84 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         if self.launcher is None:
             return
         self._launcher_position = self.launcher.position()
-        if self.visible:
-            self._place_near_launcher()
+        if self._speed_dial and self._speed_dial.visible:
+            self._speed_dial.reposition()
+
+    def toggle_speed_dial(self):
+        if self._speed_dial is not None and self._speed_dial.visible:
+            self._speed_dial.close()
+            if self.launcher:
+                self.launcher.set_icon("zap")
+            return
+
+        if self._speed_dial is None:
+            dial_items = [
+                {
+                    "label": "Works Dashboard",
+                    "icon": "zap",
+                    "plate": "#3E7BFA",
+                    "plate_hi": "#5B92FF",
+                    "command": self.toggle,
+                },
+                {
+                    "label": "Away Note",
+                    "icon": "file-text",
+                    "plate": "#10B981",
+                    "plate_hi": "#34D399",
+                    "command": self.open_away_prompt,
+                },
+                {
+                    "label": "Sticky Note",
+                    "icon": "pencil",
+                    "plate": "#F59E0B",
+                    "plate_hi": "#FBBF24",
+                    "command": self.toggle_sticky_note,
+                },
+                {
+                    "label": "VS Code Projects",
+                    "icon": "code",
+                    "plate": "#8B5CF6",
+                    "plate_hi": "#A78BFA",
+                    "command": self.open_projects,
+                },
+                {
+                    "label": "Localhost Manager",
+                    "icon": "globe",
+                    "plate": "#06B6D4",
+                    "plate_hi": "#22D3EE",
+                    "command": self.open_localhost_manager,
+                },
+            ]
+            self._speed_dial = speeddial.SpeedDialMenu(
+                self.root,
+                self.launcher,
+                dial_items,
+                on_close=lambda: self.launcher and self.launcher.set_icon("zap"),
+                on_quit=lambda: state.actions.put("quit"),
+            )
+
+        self._speed_dial.show()
+        if self.launcher:
+            self.launcher.set_icon("x")
+
+    def open_localhost_manager(self):
+        return localhost_mgr.open_localhost_manager(self)
+
+    def open_weblinks(self):
+        return self.open_localhost_manager()
+
+    def open_ports_manager(self):
+        return self.open_localhost_manager()
+
+    def open_projects(self):
+        return quickjump.open_projects_dialog(self)
+
+    def toggle_sticky_note(self):
+        if getattr(self, "_sticky_mgr", None) is None:
+            self._sticky_mgr = stickynote.StickyNoteManager(self.root)
+        active_note = self._sticky_mgr.toggle()
+        self._sticky_note = active_note
+        return active_note
 
     def _on_launcher_context_menu(self, x, y):
         self.show_launcher_menu(x, y)
@@ -363,17 +475,32 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         self.visible = False
 
     def _place_near_launcher(self, win=None, W=None, H=None):
-        """Anchor the dashboard to the floating button and popups beside it."""
+        """Anchor dashboard and popups beside the floating button."""
         try:
             win = win or self.root
             W = W or dpi.px(480)
             H = H or dpi.px(600)
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
             edge, gap = dpi.px(8), dpi.px(10)
-            if win is self.root:
-                bx, by = self.launcher.position()
-                size = self.launcher.size
-                x = bx if bx + size // 2 < sw // 2 else bx + size - W
+            if win is not self.root and win in self._log_wins.values() and self.visible and self.root.winfo_viewable():
+                # Logs stay just left/right of dashboard when open
+                dx, dy = self.root.winfo_x(), self.root.winfo_y()
+                dw = self.root.winfo_width()
+                x = dx - W - gap
+                if x < edge:
+                    x = dx + dw + gap
+                x = min(max(edge, x), max(edge, sw - W - edge))
+                y = min(max(edge, dy), max(edge, sh - H - edge))
+            else:
+                bx, by = self.launcher.position() if self.launcher else (sw - dpi.px(100), sh - dpi.px(100))
+                size = getattr(self.launcher, "size", dpi.px(56)) if self.launcher else dpi.px(56)
+                if win is self.root and bx + size // 2 >= sw // 2:
+                    # Place dashboard to the left of launcher & speed dial zone so they don't overlap
+                    dial_w = dpi.px(220)
+                    dash_x = (bx + size - dial_w) - W - gap
+                    x = dash_x if dash_x >= edge else max(edge, bx - W - gap)
+                else:
+                    x = bx if bx + size // 2 < sw // 2 else bx + size - W
                 if x + W > sw - edge:
                     x = sw - W - edge
                 if x < edge:
@@ -382,16 +509,8 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
                 below_y = by + size + gap
                 y = below_y if below_y + H <= bottom else by - H - gap
                 y = min(max(edge, y), max(edge, bottom - H))
-            else:
-                # Logs and editors stay just left of the dashboard when there
-                # is room; otherwise place them to its right.
-                dx, dy = self.root.winfo_x(), self.root.winfo_y()
-                dw = self.root.winfo_width()
-                x = dx - W - gap
-                if x < edge:
-                    x = dx + dw + gap
-                x = min(max(edge, x), max(edge, sw - W - edge))
-                y = min(max(edge, dy), max(edge, sh - H - edge))
+                if win is self.root:
+                    self._dash_pos = (x, y)
             win.geometry(f"{W}x{H}+{x}+{y}")
         except Exception:
             pass
@@ -508,7 +627,7 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
         return win
 
     @staticmethod
-    def _draggable(win, *handles):
+    def _draggable(win, *handles, on_move=None):
         """Click-drag a borderless popup by its header (no title bar)."""
         pos = {}
 
@@ -521,8 +640,11 @@ class Dashboard(WorklistMixin, LogViewerMixin, EditorsMixin, ActionsMixin):
 
         def _move(ev):
             try:
-                win.geometry(f"+{pos['gx'] + ev.x_root - pos['x']}"
-                             f"+{pos['gy'] + ev.y_root - pos['y']}")
+                nx = pos["gx"] + ev.x_root - pos["x"]
+                ny = pos["gy"] + ev.y_root - pos["y"]
+                win.geometry(f"+{nx}+{ny}")
+                if on_move:
+                    on_move(nx, ny)
             except Exception:
                 pass
 

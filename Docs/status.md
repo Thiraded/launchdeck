@@ -1,23 +1,22 @@
 # Status — current state and open gates (updated 2026-10-08)
 
-## 2026-10-08 — launcher context menu and away message overlay
+## 2026-10-08 — Speed Dial (FAB) UI with Bloom Animation, Opposite Exit Door, and Independent Floating Dashboard
 
-- Added desktop floating button right-click context menu (`DesktopLauncher` `<ButtonPress-3>` / `<ButtonRelease-3>`),
-  triggering options: "Away Note", "Dashboard", "VS Code", "Settings", and "Quit LaunchDeck".
-- Added launcher VS Code shortcut (`open_vscode` in `Dashboard`), launching VS Code for `D:\launchdeck` (`core.HERE`)
-  via detected `Code.exe` / `code.cmd` cleanly detached without console flicker.
-- Implemented Away Message feature (`deck/ui/away.py`):
-  - Interactive prompt dialog (`open_away_prompt`) with multi-row wrapping flow layout for preset chips,
-    ordered by length hierarchy (short action tags first, then longer status phrases).
-  - Shortcut click appends words dynamically with smart space padding instead of overwriting the full text,
-    auto-clearing the default fallback on first tag, and includes a handy "Clear" reset button.
-  - Fullscreen darkened overlay (`AwayOverlay`) covering multi-monitor virtual screen (`SM_CXVIRTUALSCREEN`)
-    with smooth animated fade-in / fade-out (`attributes("-alpha")` up to 0.92) and dark `#000000` scrim.
-  - Adaptive presentation card sizing and dynamic typography scaling (18pt-32pt bold, dynamic wraplength)
-    adapting seamlessly to any message length (from 4-char words like "7-11" to full multi-line notes).
-  - Dismisses seamlessly upon mouse click or any keypress (`Escape`, etc.).
-- Validation: 60 tests pass across the test suite (`test_ui_smoke.py`, `test_tray_foundation.py`,
-  `test_kill_safety.py`). `test_no_local_shadows_a_module` passed clean.
+- Replaced direct rectangular dashboard toggle with minimal Speed Dial (FAB Menu) inspired by modern floating action menus (`deck/ui/speeddial.py`):
+  - Left-click on floating desktop button toggles Speed Dial expanding with smooth 60fps cubic ease-out bloom animation.
+  - Features stack in one direction (Works Dashboard, Away Note, Sticky Note, VS Code Projects, Localhost Manager).
+  - Dedicated **Exit** action with door icon (`assets/icons/door-open.svg`) in red plate blooms out on the **opposite** side of the launcher.
+  - Floating button switches dynamically between lightning bolt (`zap`) and close (`x`). Drag-to-reposition remains smooth.
+- Implemented suite of convenience tools:
+  - **Localhost Manager** (`deck/ui/localhost_mgr.py`): Unified dev browser links and 1-click port killer into a single popup with live status indicators (🟢 / ⚪), process names, PID inspection, and custom port freeing.
+  - **Multi-Instance Persistent Sticky Notes** (`deck/ui/stickynote.py`): Draggable, always-on-top notes with editable titles in the header, `+` button to spawn sibling notes, `×` to delete notes, auto-saving to `launchdeck_logs/sticky_notes.json`.
+  - **Project Quick Jump** (`deck/ui/quickjump.py`): 1-click launcher for workspace directories (LaunchDeck, HamsterWorld, Midnight-Rider, HammonQuest) in VS Code, with clean minimal labels.
+  - **Freely Floating Works Dashboard**: Works dashboard floats completely independently from the launcher button (does not follow launcher when moved), remembers user's dragged position, and initial position sits cleanly beside the launcher/dial zone with zero overlap.
+  - **Unified Button Anchoring**: All new popups (`Localhost Manager`, `Projects`, `Away Note`) anchor directly beside the launcher button using unified placement geometry.
+- Away Message feature (`deck/ui/away.py`):
+  - Interactive prompt dialog (`open_away_prompt`) with multi-row wrapping flow layout for preset chips.
+  - Fullscreen darkened overlay (`AwayOverlay`) with smooth animated fade-in / fade-out up to 0.92 alpha, clean AFK badge, and keyboard/mouse dismissal.
+- Validation: 65 tests pass across the test suite (`test_ui_smoke.py`, `test_tray_foundation.py`, `test_kill_safety.py`). `test_no_local_shadows_a_module` passed clean. Zero subprocess console flashing.
 
 ## 2026-10-06 — drag restoration and seamless topmost
 

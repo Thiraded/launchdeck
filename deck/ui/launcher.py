@@ -105,9 +105,14 @@ class DesktopLauncher:
 
     def _paint(self, hover):
         plate = theme.TH_ACCENT_HI if hover else theme.TH_ACCENT
-        self._image = icons.photo("zap", max(8, round(self.size * 0.48)),
+        name = getattr(self, "_icon_name", "zap")
+        self._image = icons.photo(name, max(8, round(self.size * 0.48)),
                                   "white", box=self.size, plate=plate)
         self.button.configure(image=self._image)
+
+    def set_icon(self, name):
+        self._icon_name = name
+        self._paint(False)
 
     def _on_enter(self):
         self._paint(True)

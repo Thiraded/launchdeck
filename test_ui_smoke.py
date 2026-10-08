@@ -60,6 +60,11 @@ class DashboardSmoke(unittest.TestCase):
 
     def _teardown(self):
         try:
+            if getattr(self.d, "_speed_dial", None) is not None:
+                self.d._speed_dial.destroy()
+        except Exception:
+            pass
+        try:
             self.d.root.destroy()
         except Exception:
             pass
@@ -263,6 +268,99 @@ class DashboardSmoke(unittest.TestCase):
         self.assertTrue(ov_long.window.winfo_exists())
         ov_long.dismiss()
         d.root.update()
+
+    def test_speed_dial_toggle(self):
+        d = self.d
+        launcher = d.launcher
+        self.assertIsNotNone(launcher)
+        self.assertIsNone(d._speed_dial)
+        # 1. Open speed dial
+        d.toggle_speed_dial()
+        self.assertIsNotNone(d._speed_dial)
+        self.assertTrue(d._speed_dial.visible)
+        self.assertTrue(d._speed_dial.window.winfo_exists())
+        self.assertTrue(d._speed_dial.exit_window.winfo_exists())
+        self.assertEqual(getattr(launcher, "_icon_name", "zap"), "x")
+        d.root.update()
+        # 2. Close speed dial
+        d.toggle_speed_dial()
+        self.assertFalse(d._speed_dial.visible)
+        self.assertEqual(getattr(launcher, "_icon_name", "zap"), "zap")
+
+    def test_sticky_note_persistence(self):
+        import pathlib
+        import tempfile
+        d = self.d
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_path = pathlib.Path(tmp_dir) / "sticky_notes.json"
+            with mock.patch("deck.ui.stickynote.NOTES_FILE", test_path):
+                # Open sticky note
+                note = d.toggle_sticky_note()
+                self.assertIsNotNone(note)
+                self.assertTrue(note.window.winfo_exists())
+                self.assertTrue(note.window.attributes("-topmost"))
+                # Type and save text
+                note.txt.delete("1.0", "end")
+                note.txt.insert("1.0", "My persistent task 123")
+                note._save_content()
+                # Close
+                note.close()
+                self.assertFalse(note.window.winfo_exists())
+                # Re-open and verify text was loaded
+                note2 = d.toggle_sticky_note()
+                content = note2.txt.get("1.0", "end-1c")
+                self.assertIn("My persistent task 123", content)
+                note2.close()
+
+    def test_tool_dialogs(self):
+        d = self.d
+        # Projects dialog
+        win_p = d.open_projects()
+        self.assertTrue(win_p.winfo_exists())
+        d._close_popup(win_p)
+
+        # Localhost Manager dialog
+        with mock.patch("deck.ui.localhost_mgr.scan_listening_ports", return_value={3000: {"pid": 9999, "name": "node.exe"}}):
+            win_lm = d.open_localhost_manager()
+            self.assertTrue(win_lm.winfo_exists())
+            d._close_popup(win_lm)
+
+    def test_multi_sticky_notes_and_titles(self):
+        import pathlib
+        import tempfile
+        d = self.d
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_path = pathlib.Path(tmp_dir) / "sticky_notes.json"
+            with mock.patch("deck.ui.stickynote.NOTES_FILE", test_path):
+                note = d.toggle_sticky_note()
+                self.assertIsNotNone(note)
+                self.assertEqual(note.title_var.get(), "Note 1")
+                note.title_var.set("Project Tasks")
+                sibling = d._sticky_mgr._on_new_note(note)
+                self.assertIsNotNone(sibling)
+                self.assertTrue(sibling.window.winfo_exists())
+                self.assertEqual(sibling.title_var.get(), "Note 2")
+                d._sticky_mgr.toggle()
+                self.assertFalse(note.window.winfo_exists())
+                self.assertFalse(sibling.window.winfo_exists())
+
+    def test_dashboard_floating_and_escape(self):
+        d = self.d
+        d.show()
+        self.assertTrue(d.visible)
+        pos_before = (d.root.winfo_x(), d.root.winfo_y())
+        # Moving launcher does not pull or move the dashboard
+        d.launcher._set_position(120, 120, notify=True)
+        d._launcher_moved()
+        self.assertEqual((d.root.winfo_x(), d.root.winfo_y()), pos_before)
+        # Can open speed dial while dashboard is open
+        d.toggle_speed_dial()
+        self.assertTrue(d._speed_dial.visible)
+        self.assertTrue(d.visible)
+        d.toggle_speed_dial()
+        d.hide()
+        self.assertFalse(d.visible)
+
 
 
 
